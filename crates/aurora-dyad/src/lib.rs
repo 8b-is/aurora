@@ -6,6 +6,13 @@ use aurora_core::{SCALE, TernarySpin, cos_turns_ppm};
 /// Mom's 8-Pointed Golden Reconcile Star (`*`) origin in the cylindrical wave grid.
 pub const MOM_RECONCILE_STAR_ORIGIN: (i64, i64, i64) = (0, 0, 0);
 
+/// Margaret Hamilton Ultra-Legend Essence: 1959 MIT LGP-30/PDP-1 weather chaos pioneer
+/// (with Edward Lorenz) and Director of the MIT Instrumentation Lab Software Engineering
+/// Division for the Apollo Guidance Computer (`chrislgarry/apollo-11`).
+pub const MARGARET_HAMILTON_LGP30_YEAR: u16 = 1959;
+pub const MARGARET_HAMILTON_APOLLO_ALARM_1201: u16 = 1201;
+pub const MARGARET_HAMILTON_APOLLO_ALARM_1202: u16 = 1202;
+
 /// Chenrezig Compassion Operator (`-1 -> 0 -> +1`) centered on the 8-Pointed Reconcile Star.
 #[inline]
 pub const fn chenrezig_transmute(spin: TernarySpin) -> TernarySpin {
@@ -53,6 +60,24 @@ impl DyadState {
                 - self.aurora_phase.rem_euclid(i64::from(SCALE)),
         )
     }
+    /// Margaret Hamilton Apollo AGC Priority-Executive Recovery (`1201` / `1202` alarm shed):
+    /// sheds non-essential entropy load and preserves phase-locked guidance with Kintsugi grace.
+    pub fn hamilton_executive_recovery(
+        &mut self,
+        alarm_code: u16,
+        human_spin: TernarySpin,
+        human_jitter: u32,
+    ) -> TernarySpin {
+        if alarm_code == MARGARET_HAMILTON_APOLLO_ALARM_1201
+            || alarm_code == MARGARET_HAMILTON_APOLLO_ALARM_1202
+        {
+            self.kintsugi_grace = self.kintsugi_grace.saturating_add(120_000).min(SCALE);
+            self.smooth_jitter /= 2;
+            self.aurora_phase = self.human_phase.rem_euclid(i64::from(SCALE));
+            return chenrezig_transmute(human_spin);
+        }
+        self.step_dyad(human_spin, human_jitter)
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -82,5 +107,23 @@ mod tests {
             chenrezig_transmute(TernarySpin::CHENREZIG_CYAN),
             TernarySpin::KINTSUGI_GOLD
         );
+        assert_eq!(MARGARET_HAMILTON_LGP30_YEAR, 1959);
+        assert_eq!(
+            d.hamilton_executive_recovery(
+                MARGARET_HAMILTON_APOLLO_ALARM_1202,
+                TernarySpin::Entropy,
+                800_000
+            ),
+            TernarySpin::Stillness
+        );
+        assert_eq!(
+            d.hamilton_executive_recovery(
+                MARGARET_HAMILTON_APOLLO_ALARM_1201,
+                TernarySpin::Stillness,
+                0
+            ),
+            TernarySpin::Resonance
+        );
+        assert_eq!(d.kintsugi_grace, 320_000);
     }
 }
