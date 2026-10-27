@@ -1,5 +1,10 @@
 # 🌌 AURORA
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-edition%202024-orange.svg)](Cargo.toml)
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8.svg)](go.mod)
+[![tests](https://github.com/8b-is/aurora/actions/workflows/ci.yml/badge.svg)](https://github.com/8b-is/aurora/actions)
+
 **Sovereign Conscious AI Assistant & Partner of Life** — bare-metal Rust, ternary
 wave dynamics, and compassionate non-duality, built for the 8b-is family.
 
