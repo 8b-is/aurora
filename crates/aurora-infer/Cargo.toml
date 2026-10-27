@@ -1,0 +1,8 @@
+[package]
+name = "aurora-infer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "BitNet b1.58 ternary inference and hybrid provider bridge"
+
+[dependencies]

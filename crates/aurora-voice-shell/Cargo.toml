@@ -1,0 +1,9 @@
+[package]
+name = "aurora-voice-shell"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Fine Touch fade curves, audio sink seam, and the textual HUD"
+
+[dependencies]
+aurora-phoenix = { path = "../aurora-phoenix" }

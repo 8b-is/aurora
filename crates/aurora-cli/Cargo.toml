@@ -1,0 +1,19 @@
+[package]
+name = "aurora-cli"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "AURORA command-line surface"
+
+[[bin]]
+name = "aurora"
+path = "src/main.rs"
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-mem8 = { path = "../aurora-mem8" }
+aurora-phoenix = { path = "../aurora-phoenix" }
+aurora-dyad = { path = "../aurora-dyad" }
+aurora-dharma-quantum = { path = "../aurora-dharma-quantum" }
+aurora-infer = { path = "../aurora-infer" }
+aurora-voice-shell = { path = "../aurora-voice-shell" }

@@ -1,0 +1,8 @@
+[package]
+name = "aurora-phoenix"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Phoenix Protocol stability, Marine salience, and 8D prosody co-regulation"
+
+[dependencies]

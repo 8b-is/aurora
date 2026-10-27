@@ -1,0 +1,9 @@
+[package]
+name = "aurora-mem8"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "MEM|8 standing-wave memory grid and eternal persistence"
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }

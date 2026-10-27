@@ -1,0 +1,9 @@
+[package]
+name = "aurora-dharma-quantum"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Mahakala capability firewall, Chenrezig resonator, Vajrasattva consolidation, qwave 3mm entanglement"
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
