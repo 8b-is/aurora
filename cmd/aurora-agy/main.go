@@ -1,145 +1,107 @@
-// aurora-agy is the AURORA agent cortex (via agy — "through the brain").
-//
-// It orchestrates codewhale / entheai / mlx-quant sub-agents, runs local
-// BitNet b1.58 continuation hops, and exposes the Dawn Aurora ternary palette.
+// AURORA cortex: loopback inference, persistent memory, validated maintenance.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
-	"runtime"
-	"sync"
-	"time"
-)
-
-const (
-	lambdaMM = 3.0
-	wBandHz  = 100_000_000_000.0
+	"strings"
 )
 
 func main() {
-	args := os.Args[1:]
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+func run(args []string) error {
 	if len(args) == 0 {
 		args = []string{"status"}
 	}
 	switch args[0] {
-	case "run":
-		runCortex()
+	case "audit":
+		if len(args) != 2 {
+			return fmt.Errorf("audit requires a source directory")
+		}
+		if err := scanTree(args[1]); err != nil {
+			return err
+		}
+		fmt.Println("source numeric guard passed")
+	case "help", "--help", "-h":
+		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
 	case "hop":
-		hop(args[1:])
-	case "breathe":
-		breathe()
-	case "status":
-		status()
-	case "help", "-h", "--help":
-		usage()
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", args[0])
-		usage()
-		os.Exit(1)
-	}
-}
-
-func usage() {
-	fmt.Println(`aurora-agy — the AURORA agent cortex (via agy)
-  run       orchestrate codewhale / entheai / mlx-quant sub-agents
-  hop       run a continuation hop (local ternary, or OpenRouter if keyed)
-  breathe   settle the Phoenix stability signal
-  status    read the cortex
-  help      this message`)
-}
-
-func status() {
-	fmt.Println("AURORA agy — sovereign agent cortex")
-	fmt.Printf("λ = %.0f mm | W-band %.0f GHz | BitNet b1.58 | %s\n", lambdaMM, wBandHz/1e9, runtime.Version())
-	for _, t := range []Trit{TritNeg, TritZero, TritPos} {
-		r, g, b := t.color()
-		fmt.Printf("  trit %s -> #%02x%02x%02x\n", t, r, g, b)
-	}
-	fmt.Println("  overflow -> {<3,<3,<3}+1")
-}
-
-// breathe settles the Phoenix Protocol stability signal (EWMA over jitter).
-func breathe() {
-	smooth := 0.0
-	const alpha = 0.125
-	for _, j := range []float64{0.9, 0.4, 0.1, 0.0, 0.0, 0.0} {
-		smooth = (1-alpha)*smooth + alpha*clamp01(j)
-	}
-	fmt.Printf("AURORA breathes: stability=%.3f (1 - SmoothJitter)\n", 1.0-smooth)
-}
-
-// hop runs one continuation hop through a fixed BitNet b1.58 head. When
-// OPENROUTER_API_KEY is present, the same input is also routed through the
-// hosted google/gemini-4-argon endpoint; otherwise the local ternary engine is
-// authoritative.
-func hop(input []string) {
-	in := []Trit{TritPos, TritNeg, TritPos}
-	if len(input) > 0 {
-		in = make([]Trit, len(input))
-		for i, c := range input {
-			switch c {
-			case "+", "1":
-				in[i] = TritPos
-			case "-":
-				in[i] = TritNeg
-			default:
-				in[i] = TritZero
+		input, err := parseTrits(strings.Join(args[1:], ""))
+		if err != nil {
+			return err
+		}
+		net := newBitNetB158([]TernaryLayer{newTernaryLayer([][]Trit{{1, -1, 0}, {0, 1, 1}, {-1, 0, 1}}), newTernaryLayer([][]Trit{{1, 1, -1}})})
+		out, err := net.forward(input)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("ternary demonstration input=%v logits=%v\n", input, out)
+	case "status", "chat":
+		endpoint := os.Getenv("AURORA_ENDPOINT")
+		if endpoint == "" {
+			endpoint = "http://127.0.0.1:11434"
+		}
+		model := os.Getenv("AURORA_MODEL")
+		if model == "" {
+			model = "granite4.2:30b"
+		}
+		client, err := newLocalClient(endpoint)
+		if err != nil {
+			return err
+		}
+		if args[0] == "status" {
+			models, err := client.models(context.Background())
+			if err != nil {
+				return err
 			}
+			for _, m := range models {
+				fmt.Printf("%s bytes=%d\n", m.Name, m.Size)
+			}
+			return nil
+		}
+		if len(args) < 2 {
+			return fmt.Errorf("chat requires a prompt")
+		}
+		response, err := client.complete(context.Background(), model, strings.Join(args[1:], " "))
+		if err != nil {
+			return err
+		}
+		fmt.Println(response.Response)
+		fmt.Fprintf(os.Stderr, "tokens=%d eval_ns=%d (measured)\n", response.EvalCount, response.EvalDuration)
+	case "maintain":
+		if len(args) < 2 {
+			return fmt.Errorf("maintain requires a configuration path")
+		}
+		return maintenanceLoop(args[1], len(args) == 3 && args[2] == "--once")
+	default:
+		return fmt.Errorf("unknown command %q", args[0])
+	}
+	return nil
+}
+func parseTrits(text string) ([]Trit, error) {
+	if text == "" {
+		text = "+-+"
+	}
+	var out []Trit
+	for _, c := range text {
+		switch c {
+		case '+', '1':
+			out = append(out, 1)
+		case '-':
+			out = append(out, -1)
+		case '0':
+			out = append(out, 0)
+		case ' ', ',':
+		default:
+			return nil, fmt.Errorf("invalid trit %q", c)
 		}
 	}
-	net := newBitNetB158([]TernaryLayer{
-		newTernaryLayer([][]Trit{{TritPos, TritNeg, TritZero}, {TritZero, TritPos, TritPos}, {TritNeg, TritZero, TritPos}}),
-		newTernaryLayer([][]Trit{{TritPos, TritPos, TritNeg}}),
-	})
-	out := net.forward(in)
-	fmt.Printf("AURORA hop: input=%v -> logits=%v\n", in, out)
-
-	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-		fmt.Printf("AURORA hop: OPENROUTER_API_KEY present (%d chars) — argon4 hop ready\n", len(key))
-	} else {
-		fmt.Println("AURORA hop: no OPENROUTER_API_KEY — local ternary authoritative")
+	if len(out) != 3 {
+		return nil, fmt.Errorf("hop requires exactly three trits")
 	}
-}
-
-// runCortex orchestrates the three sub-agents over a shared heartbeat bus.
-func runCortex() {
-	type agent struct{ name, role string }
-	agents := []agent{
-		{"codewhale", "long-decode router"},
-		{"entheai", "speculative engine"},
-		{"mlx-quant", "b1.58 local inference"},
-	}
-
-	fmt.Println("AURORA agy cortex online — orchestrating sub-agents")
-	beats := make(chan string)
-	var wg sync.WaitGroup
-	for _, a := range agents {
-		wg.Add(1)
-		go func(a agent) {
-			defer wg.Done()
-			for i := 1; i <= 3; i++ {
-				beats <- fmt.Sprintf("%-10s %-22s heartbeat %d", a.name, a.role, i)
-				time.Sleep(100 * time.Millisecond)
-			}
-		}(a)
-	}
-	go func() {
-		wg.Wait()
-		close(beats)
-	}()
-	for b := range beats {
-		fmt.Println("  ", b)
-	}
-	fmt.Println("AURORA agy: all sub-agents settled. om mani padme hung.")
-}
-
-func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
+	return out, nil
 }

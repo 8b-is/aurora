@@ -11,11 +11,13 @@
 //! * **qwave** — a 2×2 density-matrix Von Neumann entropy and state fidelity,
 //!   the `λ = 3 mm` entanglement substrate.
 
-use aurora_core::{TernarySpin, VAKED_ATTENUATION_BUDGET_NS, WaveMemoryTuple};
+use aurora_core::{
+    ArithmeticError, Rational, SCALE, TernarySpin, VAKED_ATTENUATION_BUDGET_NS, WaveMemoryTuple,
+};
 use std::time::Duration;
 
 /// The qwave entanglement wavelength, kept at the `3 mm` design threshold.
-pub const WAVELENGTH_MM: f64 = 3.0;
+pub const WAVELENGTH_MM: u32 = 3;
 
 /// Mahākāla capability firewall with a hard attenuation budget.
 #[derive(Debug, Clone)]
@@ -40,17 +42,17 @@ impl MahakalaGuard {
     }
 
     /// Returns `true` when the requested capability is covered by the granted
-    /// one (`requested <= granted`) and the attenuation has not blown the
+    /// one (`requested & !granted == 0`) and the attenuation has not blown the
     /// budget. Otherwise records a violation and returns `false`.
     pub fn permits(&mut self, requested: u64, granted: u64, elapsed: Duration) -> bool {
-        if requested > granted {
-            self.violations += 1;
+        if requested & !granted != 0 {
+            self.violations = self.violations.saturating_add(1);
             return false;
         }
-        let nanos = elapsed.as_nanos() as u64;
+        let nanos = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
         self.spent_ns = self.spent_ns.saturating_add(nanos);
-        if self.spent_ns > self.budget_ns {
-            self.violations += 1;
+        if self.spent_ns >= self.budget_ns {
+            self.violations = self.violations.saturating_add(1);
             return false;
         }
         true
@@ -95,44 +97,70 @@ pub struct VajrasattvaConsolidator {
 }
 
 impl VajrasattvaConsolidator {
-    pub fn consolidate(&mut self, memories: &[WaveMemoryTuple]) -> (f64, u64) {
+    pub fn consolidate(&mut self, memories: &[WaveMemoryTuple]) -> (Rational, u64) {
         self.cycles += 1;
-        let n = memories.len().max(1) as f64;
+        let n = memories.len().max(1) as u64;
         let resonant = memories
             .iter()
             .filter(|m| m.spin != TernarySpin::Entropy)
-            .count() as f64;
+            .count() as i64;
         let gold = memories
             .iter()
             .map(|m| m.kintsugi_scar_gold as u64)
             .sum::<u64>();
-        (resonant / n, gold)
+        (
+            Rational::new(resonant, n).expect("bounded memory count"),
+            gold,
+        )
     }
 }
 
 /// Von Neumann entropy of a real symmetric 2×2 density matrix
 /// `ρ = [[a, b], [b, 1-a]]` (trace 1). Closed-form eigenvalues
 /// `λ± = 0.5(1 ± sqrt((2a-1)^2 + 4b^2))`.
-pub fn von_neumann_entropy_2x2(a: f64, b: f64) -> f64 {
-    let delta = ((2.0 * a - 1.0).powi(2) + 4.0 * b * b).sqrt();
-    let lambda_plus = 0.5 * (1.0 + delta);
-    let lambda_minus = 0.5 * (1.0 - delta);
-
-    fn shannon(x: f64) -> f64 {
-        if x <= 0.0 {
-            0.0
-        } else {
-            -x * x.ln()
-        }
+pub fn von_neumann_entropy_2x2(a: u32, b: i32) -> Result<Rational, ArithmeticError> {
+    if a > SCALE || b.unsigned_abs() > SCALE / 2 {
+        return Err(ArithmeticError::InvalidDomain);
     }
-
-    shannon(lambda_plus) + shannon(lambda_minus)
+    let s = i64::from(SCALE);
+    let delta_squared = (2 * i64::from(a) - s).pow(2) + 4 * i64::from(b).pow(2);
+    if delta_squared > s * s {
+        return Err(ArithmeticError::InvalidDomain);
+    }
+    let delta = (delta_squared as u64).isqrt() as i64;
+    let plus = (s + delta) / 2;
+    // Integer log approximation via range reduction and the atanh series.
+    fn shannon(mut x: i64) -> i64 {
+        if x == 0 {
+            return 0;
+        }
+        let original = x;
+        let s = i64::from(SCALE);
+        let mut shifts = 0;
+        while x < s / 2 {
+            x *= 2;
+            shifts += 1;
+        }
+        let y = (x - s) * s / (x + s);
+        let yy = y * y / s;
+        let mut term = y;
+        let mut sum = y;
+        for denominator in (3..=31).step_by(2) {
+            term = term * yy / s;
+            sum += term / denominator;
+        }
+        let log = 2 * sum - shifts * 693_147;
+        -original * log / s
+    }
+    Rational::new(shannon(plus) + shannon(s - plus), u64::from(SCALE))
 }
 
 /// Fidelity `|⟨ψ|φ⟩|²` between two real 2-component state vectors.
-pub fn fidelity(psi: [f64; 2], phi: [f64; 2]) -> f64 {
-    let inner = psi[0] * phi[0] + psi[1] * phi[1];
-    inner * inner
+pub fn fidelity(psi: [Rational; 2], phi: [Rational; 2]) -> Result<Rational, ArithmeticError> {
+    let inner = psi[0]
+        .checked_mul(phi[0])?
+        .checked_add(psi[1].checked_mul(phi[1])?)?;
+    inner.checked_mul(inner)
 }
 
 #[cfg(test)]
@@ -152,8 +180,10 @@ mod tests {
     #[test]
     fn test_budget_exhaustion() {
         let mut guard = MahakalaGuard::new(100); // 100 ns budget
-        assert!(!guard.permits(1, 1, Duration::from_micros(1)));
+        assert!(!guard.permits(1, 1, Duration::from_nanos(100)));
         assert!(guard.violations() >= 1);
+        let mut guard = MahakalaGuard::default_budget();
+        assert!(!guard.permits(1, 2, Duration::ZERO));
     }
 
     #[test]
@@ -168,21 +198,42 @@ mod tests {
     #[test]
     fn test_pure_state_has_zero_entropy() {
         // ρ = |0⟩⟨0|
-        assert!(von_neumann_entropy_2x2(1.0, 0.0) < 1e-12);
+        assert_eq!(von_neumann_entropy_2x2(SCALE, 0).unwrap(), Rational::ZERO);
         // ρ = |+⟩⟨+| = [[0.5,0.5],[0.5,0.5]]
-        assert!(von_neumann_entropy_2x2(0.5, 0.5) < 1e-12);
+        assert_eq!(
+            von_neumann_entropy_2x2(500_000, 500_000).unwrap(),
+            Rational::ZERO
+        );
     }
 
     #[test]
     fn test_maximally_mixed_entropy_is_ln2() {
         // ρ = I/2
-        let s = von_neumann_entropy_2x2(0.5, 0.0);
-        assert!((s - std::f64::consts::LN_2).abs() < 1e-12);
+        let s = von_neumann_entropy_2x2(500_000, 0)
+            .unwrap()
+            .scaled(u64::from(SCALE))
+            .unwrap();
+        assert!((s - 693_147).abs() < 10);
+        assert!(von_neumann_entropy_2x2(SCALE, 1).is_err());
     }
 
     #[test]
     fn test_fidelity_identical_is_one() {
-        assert!((fidelity([1.0, 0.0], [1.0, 0.0]) - 1.0).abs() < 1e-12);
-        assert!(fidelity([1.0, 0.0], [0.0, 1.0]) < 1e-12);
+        assert_eq!(
+            fidelity(
+                [Rational::ONE, Rational::ZERO],
+                [Rational::ONE, Rational::ZERO]
+            )
+            .unwrap(),
+            Rational::ONE
+        );
+        assert_eq!(
+            fidelity(
+                [Rational::ONE, Rational::ZERO],
+                [Rational::ZERO, Rational::ONE]
+            )
+            .unwrap(),
+            Rational::ZERO
+        );
     }
 }

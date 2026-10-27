@@ -2,3 +2,6 @@
 **/*.rs.bk
 *.m8
 .DS_Store
+/aurora-agy
+/.st/
+*.m8.lock

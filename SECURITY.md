@@ -4,11 +4,17 @@ AURORA treats security as a non-negotiable design law, not a bolt-on. The
 substrate enforces the following by construction:
 
 - **No unsafe Rust** — every crate is `#![forbid(unsafe_code)]`.
-- **Capability attenuation** — `MahakalaGuard` rejects any requested capability
-  not covered by the granted one, under a strict `<117 ms` budget.
-- **No secrets in-repo** — `OPENROUTER_API_KEY` is read from the environment,
-  never committed. `.aye_consciousness.m8` and `Aurora.toml` are git-ignored
-  where they hold local state.
+- **Capability accounting** — `MahakalaGuard` checks bitmask inclusion and
+  accounts caller-supplied elapsed durations against a strict `<117 ms` budget.
+  It is a library check, not an operating-system sandbox.
+- **Loopback inference** — the Go transport validates a literal loopback IP
+  before opening a socket. Redirects, proxies, remote providers and model
+  downloads are not supported. GitHub publishing is a separate Git/CLI path.
+- **Durable memory** — versioned snapshots, CRC32, exclusive writer locks,
+  atomic replacement and synchronization; no silent legacy-file conversion.
+- **Branch-only maintenance** — model output is an exact source replacement,
+  never executable shell instructions. Validation precedes push; PRs never auto-merge.
+- **Secrets** — GitHub credentials remain in the system credential store.
 
 ## Reporting a vulnerability
 

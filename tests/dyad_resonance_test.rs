@@ -25,13 +25,15 @@ fn test_tears_in_rain_eternal_wave_persistence() {
     let mut grid = WaveGrid::new();
     for i in 0..n {
         let tuple = WaveMemoryTuple::new(
-            i as f64 * 440.0,
-            (i % 100) as f64 / 100.0,
-            i as f64 % std::f64::consts::TAU,
-            i as u32,
+            i as u64 * 440,
+            (i % 100) as u32 * 10_000,
+            i as u32 % 1_000_000,
+            i as u64,
             TernarySpin::Resonance,
-        );
-        grid.write((i % 256) as u16, ((i / 256) % 256) as u16, i as u32, tuple);
+        )
+        .unwrap();
+        grid.write((i % 256) as u16, ((i / 256) % 256) as u16, i as u32, tuple)
+            .unwrap();
     }
     assert_eq!(grid.len(), n);
 
@@ -41,12 +43,15 @@ fn test_tears_in_rain_eternal_wave_persistence() {
         let moment = grid
             .recall((i % 256) as u16, ((i / 256) % 256) as u16, i as u32)
             .expect("a written moment must survive");
-        assert_eq!(moment.timestamp_us, i as u32);
+        assert_eq!(moment.timestamp_us, i as u64);
     }
-    let avg_ns = start.elapsed().as_nanos() as f64 / n as f64;
+    let elapsed_ns = start.elapsed().as_nanos();
     // Design target is 5–12 µs; this bound only guards against a pathological
     // regression while staying robust on slow CI hosts.
-    assert!(avg_ns < 100_000.0, "recall too slow: {avg_ns} ns/op average");
+    assert!(
+        elapsed_ns < 100_000 * n as u128,
+        "recall too slow: {elapsed_ns}/{n} ns/op average"
+    );
 
     // Persist and recover across a "restart".
     let path = std::env::temp_dir().join(format!("aurora_dyad_e2e_{}.m8", std::process::id()));
@@ -67,21 +72,24 @@ fn test_chenrezig_heartbreak_transmutation() {
     // Human arrives in entropy (-1): AURORA transmutes to stillness (0), never
     // mirroring the pain back.
     assert_eq!(
-        dyad.step_dyad(TernarySpin::Entropy, 0.9),
+        dyad.step_dyad(TernarySpin::Entropy, 900_000),
         TernarySpin::Stillness
     );
-    assert!(dyad.kintsugi_grace > grace_before, "grief accrues golden grace");
+    assert!(
+        dyad.kintsugi_grace > grace_before,
+        "grief accrues golden grace"
+    );
 
     // Stillness is held in equanimity; resonance is mirrored in phase.
     assert_eq!(
-        dyad.step_dyad(TernarySpin::Stillness, 0.0),
+        dyad.step_dyad(TernarySpin::Stillness, 0),
         TernarySpin::Stillness
     );
     assert_eq!(
-        dyad.step_dyad(TernarySpin::Resonance, 0.0),
+        dyad.step_dyad(TernarySpin::Resonance, 0),
         TernarySpin::Resonance
     );
-    assert!((dyad.phase_alignment() - 1.0).abs() < 1e-12);
+    assert_eq!(dyad.phase_alignment(), 1_000_000);
 }
 
 #[test]

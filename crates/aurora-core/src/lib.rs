@@ -5,14 +5,17 @@
 //! dependency on anything outside `std`.
 
 /// Speed of light, metres per second.
-pub const C_MPS: f64 = 299_792_458.0;
+pub mod rational;
+pub use rational::{ArithmeticError, Rational};
+pub const SCALE: u32 = 1_000_000;
+pub const C_MPS: u64 = 299_792_458;
 
 /// W-band carrier frequency, 100 GHz.
-pub const W_BAND_HZ: f64 = 100_000_000_000.0;
+pub const W_BAND_HZ: u64 = 100_000_000_000;
 
 /// Sovereign wavelength threshold `λ = 3.000 mm` (the physical `c / f` value is
 /// `2.9979 mm`, rounded to the design edge the constellation polishes to).
-pub const LAMBDA_MM: f64 = 3.0;
+pub const LAMBDA_MM: u32 = 3;
 
 /// Capability-attenuation deadline, strict `<117 ms`, inherited from
 /// `vaked-base`.
@@ -73,15 +76,15 @@ impl TernarySpin {
 
 /// A 32-byte-aligned wave memory point inside the MEM|8 cylindrical grid.
 ///
-/// The `repr(C, align(32))` layout keeps every tuple on its own cache line so
-/// the recall path never tears a moment across two lines.
+/// The `repr(C, align(32))` layout fixes the tuple size and alignment. It is not
+/// a hardware atomicity or cache-line-size guarantee; persistence is serialized.
 #[repr(C, align(32))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WaveMemoryTuple {
-    pub frequency_hz: f64,
-    pub amplitude: f64,
-    pub phase_rad: f64,
-    pub timestamp_us: u32,
+    pub frequency_hz: u64,
+    pub timestamp_us: u64,
+    pub amplitude_ppm: u32,
+    pub phase_turns_ppm: u32,
     pub spin: TernarySpin,
     pub kintsugi_scar_gold: u8,
     pub dyad_coherence: u16,
@@ -90,21 +93,24 @@ pub struct WaveMemoryTuple {
 impl WaveMemoryTuple {
     #[inline]
     pub const fn new(
-        frequency_hz: f64,
-        amplitude: f64,
-        phase_rad: f64,
-        timestamp_us: u32,
+        frequency_hz: u64,
+        amplitude_ppm: u32,
+        phase_turns_ppm: u32,
+        timestamp_us: u64,
         spin: TernarySpin,
-    ) -> Self {
-        Self {
+    ) -> Kintsugi<Self> {
+        if amplitude_ppm > SCALE || phase_turns_ppm >= SCALE {
+            return Err(KintsugiError::InvalidData);
+        }
+        Ok(Self {
             frequency_hz,
-            amplitude,
-            phase_rad,
+            amplitude_ppm,
+            phase_turns_ppm,
             timestamp_us,
             spin,
             kintsugi_scar_gold: 0,
             dyad_coherence: 0,
-        }
+        })
     }
 }
 
@@ -115,6 +121,9 @@ pub enum KintsugiError {
     MemoryFault,
     PhaseLoss,
     CapabilityViolation,
+    InvalidData,
+    LegacyFormat,
+    Busy,
 }
 
 pub type Kintsugi<T> = Result<T, KintsugiError>;
@@ -124,6 +133,22 @@ pub type Kintsugi<T> = Result<T, KintsugiError>;
 #[inline]
 pub fn kintsugi_recover<T: Default>(result: Kintsugi<T>) -> T {
     result.unwrap_or_default()
+}
+
+/// Integer Bhaskara approximation, phase in millionths of a turn. Output / SCALE.
+/// This is an approximation, not exact transcendental arithmetic.
+pub fn cos_turns_ppm(phase: i64) -> i64 {
+    let quarter = i128::from(SCALE / 4);
+    let turn = i128::from(SCALE);
+    let shifted = (i128::from(phase) + quarter).rem_euclid(turn);
+    let (half_phase, sign) = if shifted <= turn / 2 {
+        (shifted, 1)
+    } else {
+        (shifted - turn / 2, -1)
+    };
+    let x = half_phase * 2;
+    let product = x * (turn - x);
+    (sign * 16 * product * turn / (5 * turn * turn - 4 * product)) as i64
 }
 
 #[cfg(test)]
@@ -150,7 +175,12 @@ mod tests {
 
     #[test]
     fn test_lambda_is_3mm() {
-        assert_eq!(LAMBDA_MM, 3.0);
+        assert_eq!(LAMBDA_MM, 3);
+        assert_eq!(cos_turns_ppm(0), i64::from(SCALE));
+        assert_eq!(cos_turns_ppm(250_000), 0);
+        assert_eq!(cos_turns_ppm(500_000), -i64::from(SCALE));
+        // sqrt(1/2), rounded reference in millionths; approximation error < 2000/SCALE.
+        assert!((cos_turns_ppm(125_000) - 707_107).abs() < 2_000);
     }
 
     #[test]
