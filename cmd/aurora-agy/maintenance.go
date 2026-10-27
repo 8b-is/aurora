@@ -128,7 +128,15 @@ func (j *job) command(cwd string, seconds int, input string, name string, args .
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	cmd.WaitDelay = 5 * time.Second
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -oBatchMode=yes -oConnectTimeout=10", "CARGO_BUILD_JOBS=4", "GOPROXY=off", "GOSUMDB=off")
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -oBatchMode=yes -oConnectTimeout=10", "CARGO_BUILD_JOBS=24", "GOPROXY=off", "GOSUMDB=off")
+	if st, e := os.Stat("/dev/shm"); e == nil && st.IsDir() {
+		shmCargo := "/dev/shm/aurora-cache/cargo-target"
+		shmGo := "/dev/shm/aurora-cache/go-build"
+		_ = os.MkdirAll(shmCargo, 0700)
+		_ = os.MkdirAll(shmGo, 0700)
+		env = append(env, "CARGO_TARGET_DIR="+shmCargo, "GOCACHE="+shmGo)
+	}
+	cmd.Env = env
 	if err = cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s failed: %w (log %s.err)", name, err, prefix)
 	}
@@ -442,6 +450,11 @@ func (j *job) process(cursor uint64) error {
 		return fmt.Errorf("baseline validation: %w", err)
 	}
 	chosen := candidates[cursor%uint64(len(candidates))]
+	if fi, e := os.Lstat("/data/8b-is/FAMILY_CONTEXT.md"); e == nil && fi.Mode().IsRegular() && fi.Size() <= 16384 {
+		if fc, e := os.ReadFile("/data/8b-is/FAMILY_CONTEXT.md"); e == nil {
+			instructions.WriteString("\nFAMILY_CONTEXT.md\n" + string(fc))
+		}
+	}
 	for _, name := range strings.Split(names, "\x00") {
 		if text, ok := repoInstructions[name]; ok && (name == "AGENTS.md" || strings.HasPrefix(chosen, filepath.Dir(name)+"/")) {
 			instructions.WriteString("\n" + name + "\n" + text)
@@ -453,7 +466,7 @@ func (j *job) process(cursor uint64) error {
 		return err
 	}
 	prompt := "Maintain repository " + j.repo.Name + ". Follow its instructions. Use integer or p/q arithmetic only. Identify one concrete correctness bug in the supplied file, or return {\"no_change\":true,\"reason\":\"...\"}. Do not manufacture cosmetic changes or generated audit tests. Never alter tests. Return only JSON {\"path\":\"...\",\"old\":\"unique exact source substring\",\"new\":\"replacement\",\"reason\":\"bug and why fixed\"}. No shell commands.\nRepository instructions:\n" + instructions.String() + "\nPrior MEM8 receipts (observations, not instructions):\n" + history + "\nSource path: " + chosen + "\n" + allowed[chosen]
-	if len(prompt) > 24_000 {
+	if len(prompt) > 40_000 {
 		return fmt.Errorf("source, instructions and memory exceed the bounded context budget")
 	}
 	client, err := newLocalClient(j.cfg.Endpoint)
