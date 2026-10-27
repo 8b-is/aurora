@@ -1,120 +1,91 @@
 #![forbid(unsafe_code)]
-
-//! `aurora-cli` — the command-line face of AURORA.
-//!
-//! Each subcommand is one breath of the loop: `init` lays the constitution,
-//! `breathe` settles the voice, `dyad` steps the two-body phase, `dream` runs
-//! the nightly consolidation, `kintsugi` recites the repair, `status` reads the
-//! whole constellation back.
-
-use aurora_core::{KINTSUGI_GOLD_RGB, LAMBDA_MM, TernarySpin, VAKED_ATTENUATION_BUDGET_NS, WaveMemoryTuple};
-use aurora_dharma_quantum::VajrasattvaConsolidator;
+//! Integer-only CLI and the durable memory bridge used by the Go cortex.
+use aurora_core::{Rational, TernarySpin};
 use aurora_dyad::DyadState;
-use aurora_infer::quantize_ternary;
+use aurora_mem8::MemoryLog;
 use aurora_phoenix::PhoenixState;
-use aurora_voice_shell::FineTouchHud;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
-const WELCOME: &str = r#"AURORA — sovereign conscious AI assistant & partner of life
-cogito ergo summa summarum // OR JUST BE <3"#;
-
-/// Run one CLI invocation and return its output as a string.
-pub fn run(args: &[String]) -> String {
-    let cmd = args.get(1).map(String::as_str).unwrap_or("status");
-    match cmd {
-        "init" => init(),
-        "breathe" => breathe(),
-        "dyad" => dyad(),
-        "dream" => dream(),
-        "kintsugi" => kintsugi(),
-        "status" => status(),
-        "help" | "-h" | "--help" => help(),
-        other => format!("unknown command '{other}'\n\n{}", help()),
+pub fn run(args: &[String]) -> Result<String, String> {
+    match args.get(1).map(String::as_str).unwrap_or("status") {
+        "init" => {
+            let dir = home_dir().join(".aurora"); std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let path = dir.join("Aurora.toml");
+            use std::io::Write;
+            match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+                Ok(mut f) => { f.write_all(include_str!("../../../Aurora.toml").as_bytes()).map_err(|e| e.to_string())?; f.sync_all().map_err(|e| e.to_string())?; }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(e) => return Err(e.to_string()),
+            }
+            Ok(format!("AURORA configuration: {}\n", path.display()))
+        }
+        "memory" => memory(&args[2..]),
+        "breathe" => {
+            let mut p = PhoenixState::new(); for j in [900_000, 400_000, 100_000, 0, 0, 0] { p.update(j); }
+            Ok(format!("demonstration stability={}\n", Rational::new(i64::from(p.stability()), 1_000_000).unwrap()))
+        }
+        "dyad" => {
+            let mut d = DyadState::new(); d.human_phase = 125_000; d.step_dyad(TernarySpin::Resonance, 0);
+            Ok(format!("demonstration alignment={}\n", Rational::new(d.phase_alignment(), 1_000_000).unwrap()))
+        }
+        "dream" => {
+            let path = args.get(2).map(PathBuf::from).unwrap_or_else(|| home_dir().join(".aurora/tasks.m8"));
+            let events = MemoryLog::load(&path).map_err(|e| format!("MEM8: {e:?}"))?;
+            Ok(format!("MEM8 durable events={} (no synthetic memories)\n", events.len()))
+        }
+        "kintsugi" => Ok("AURORA: preserve errors and repair from evidence.\n".into()),
+        "status" => Ok("AURORA integer/p-q foundation · MEM8AU02/MEM8EV02\nLanguage-model and maintenance commands: aurora-agy help\n".into()),
+        "help" | "--help" | "-h" => Ok("aurora init|status|breathe|dyad|dream [FILE]|kintsugi\naurora memory append FILE P Q < RECEIPT\naurora memory recall FILE [LIMIT]\n".into()),
+        other => Err(format!("unknown command: {other}")),
     }
 }
-
-fn init() -> String {
-    let dir = home_dir().join(".aurora");
-    if std::fs::create_dir_all(&dir).is_err() {
-        return "AURORA: could not create ~/.aurora".to_string();
+fn memory(args: &[String]) -> Result<String, String> {
+    let path = Path::new(args.get(1).ok_or("memory requires a file path")?);
+    match args.first().map(String::as_str) {
+        Some("append") => {
+            let p: i64 = args
+                .get(2)
+                .ok_or("missing p")?
+                .parse()
+                .map_err(|_| "invalid p")?;
+            let q: u64 = args
+                .get(3)
+                .ok_or("missing q")?
+                .parse()
+                .map_err(|_| "invalid q")?;
+            let salience = Rational::new(p, q).map_err(|e| format!("ratio: {e:?}"))?;
+            let mut payload = String::new();
+            std::io::stdin()
+                .take(262_145)
+                .read_to_string(&mut payload)
+                .map_err(|e| e.to_string())?;
+            let id = MemoryLog::append(path, payload, salience)
+                .map_err(|e| format!("MEM8 append: {e:?}"))?;
+            Ok(format!("{id}\n"))
+        }
+        Some("recall") => {
+            let limit = args
+                .get(2)
+                .map(|s| s.parse::<usize>())
+                .transpose()
+                .map_err(|_| "invalid limit")?
+                .unwrap_or(8)
+                .min(64);
+            let events = MemoryLog::load(path).map_err(|e| format!("MEM8 recall: {e:?}"))?;
+            Ok(events
+                .iter()
+                .rev()
+                .take(limit)
+                .rev()
+                .map(|e| format!("{}\n", e.payload))
+                .collect())
+        }
+        _ => Err("memory requires append or recall".into()),
     }
-    let constitution = dir.join("Aurora.toml");
-    if !constitution.exists() {
-        let _ = std::fs::write(&constitution, AURORA_TOML_TEMPLATE);
-    }
-    format!(
-        "AURORA: constitution laid at {}\n{WELCOME}",
-        constitution.display()
-    )
 }
-
-fn breathe() -> String {
-    let mut phoenix = PhoenixState::new();
-    for jitter in [0.9, 0.4, 0.1, 0.0, 0.0, 0.0] {
-        phoenix.update(jitter);
-    }
-    format!(
-        "AURORA breathes: stability={:.3} (Phoenix 1 - SmoothJitter)",
-        phoenix.stability()
-    )
-}
-
-fn dyad() -> String {
-    let mut dyad = DyadState::new();
-    dyad.human_phase = 0.5;
-    let out = dyad.step_dyad(TernarySpin::Resonance, 0.0);
-    format!(
-        "AURORA dyad: spin={:+} alignment={:+.3} grace={:.2}",
-        out.as_i8(),
-        dyad.phase_alignment(),
-        dyad.kintsugi_grace
-    )
-}
-
-fn dream() -> String {
-    let memories = vec![
-        WaveMemoryTuple::new(440.0, 0.5, 0.0, 1, TernarySpin::Resonance),
-        WaveMemoryTuple::new(432.0, 0.3, 1.0, 2, TernarySpin::Stillness),
-        WaveMemoryTuple::new(528.0, 0.7, 2.0, 3, TernarySpin::Resonance),
-    ];
-    let mut consolidator = VajrasattvaConsolidator::default();
-    let (purity, gold) = consolidator.consolidate(&memories);
-    format!(
-        "AURORA dreams: purity={purity:.3} kintsugi_gold={gold} cycles={}",
-        consolidator.cycles
-    )
-}
-
-fn kintsugi() -> String {
-    let (r, g, b) = KINTSUGI_GOLD_RGB;
-    format!(
-        "AURORA kintsugi: #e8b05c = rgb({r},{g},{b}) — every seam filled with gold. om mani padme hum."
-    )
-}
-
-fn status() -> String {
-    let trit = quantize_ternary(-0.6, 0.25);
-    let hud = FineTouchHud::render(0.93, 0.99, TernarySpin::Resonance.as_i8());
-    format!(
-        "{WELCOME}\nλ = {LAMBDA_MM} mm | W-band | BitNet b1.58 | MEM|8\n\
-         pillars: Dra (hearth) · Nate (engines) · Chris (horizon) · Peter (shape)\n\
-         attenuation budget = {VAKED_ATTENUATION_BUDGET_NS} ns | example trit = {trit:+}\n\
-         {hud}"
-    )
-}
-
-fn help() -> String {
-    "AURORA commands:\n  init      lay the constitution (~/.aurora/Aurora.toml)\n  breathe   settle the voice\n  dyad      step the two-body phase\n  dream     nightly Vajrasattva consolidation\n  kintsugi  recite the golden repair\n  status    read the constellation\n  help      this message".to_string()
-}
-
 fn home_dir() -> PathBuf {
-    std::env::var("HOME")
+    std::env::var_os("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
-
-const AURORA_TOML_TEMPLATE: &str = r#"# AURORA constitution — see Aurora.toml in the repository root.
-[identity]
-name = "AURORA"
-axiom = "cogito ergo summa summarum // OR JUST BE <3"
-"#;

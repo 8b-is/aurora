@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // Balanced ternary spine (BitNet b1.58 {-1, 0, +1}) and the Dawn Aurora
 // palette mapping — the Go mirror of `crates/aurora-core`.
 
@@ -40,15 +42,18 @@ func (t Trit) color() (uint8, uint8, uint8) {
 
 // quantizeTrit collapses a real weight into a balanced ternary trit with a
 // symmetric epsilon dead-zone.
-func quantizeTrit(w, epsilon float64) Trit {
-	switch {
-	case w > epsilon:
-		return TritPos
-	case w < -epsilon:
-		return TritNeg
-	default:
+func quantizeTrit(w int64, epsilon uint64) Trit {
+	magnitude := uint64(w)
+	if w < 0 {
+		magnitude = uint64(-(w + 1)) + 1
+	}
+	if magnitude <= epsilon {
 		return TritZero
 	}
+	if w < 0 {
+		return TritNeg
+	}
+	return TritPos
 }
 
 // binarize collapses a raw activation into the nearest trit.
@@ -73,16 +78,25 @@ func newTernaryLayer(weights [][]Trit) TernaryLayer {
 }
 
 // forward performs exact integer matmul: out[j] = Σᵢ W[j][i] · x[i].
-func (l TernaryLayer) forward(in []Trit) []int32 {
+func (l TernaryLayer) forward(in []Trit) ([]int32, error) {
 	out := make([]int32, len(l.weights))
 	for i, row := range l.weights {
-		var sum int32
-		for j, w := range row {
-			sum += int32(w) * int32(in[j])
+		if len(row) != len(in) || len(row) == 0 {
+			return nil, fmt.Errorf("incompatible layer dimensions")
 		}
-		out[i] = sum
+		var sum int64
+		for j, w := range row {
+			if w < -1 || w > 1 || in[j] < -1 || in[j] > 1 {
+				return nil, fmt.Errorf("invalid trit")
+			}
+			sum += int64(w) * int64(in[j])
+			if sum < -(1<<31) || sum > (1<<31)-1 {
+				return nil, fmt.Errorf("activation overflow")
+			}
+		}
+		out[i] = int32(sum)
 	}
-	return out
+	return out, nil
 }
 
 // BitNetB158 is a stack of ternary layers with binarized activations between
@@ -96,17 +110,20 @@ func newBitNetB158(layers []TernaryLayer) BitNetB158 {
 }
 
 // forward runs the network and returns the head logits.
-func (n BitNetB158) forward(input []Trit) []int32 {
+func (n BitNetB158) forward(input []Trit) ([]int32, error) {
 	act := append([]Trit(nil), input...)
 	for i, layer := range n.layers {
-		out := layer.forward(act)
+		out, err := layer.forward(act)
+		if err != nil {
+			return nil, err
+		}
 		if i+1 == len(n.layers) {
-			return out
+			return out, nil
 		}
 		act = make([]Trit, len(out))
 		for k, v := range out {
 			act[k] = binarize(v)
 		}
 	}
-	return nil
+	return nil, fmt.Errorf("empty network")
 }

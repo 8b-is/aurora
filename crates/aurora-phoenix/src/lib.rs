@@ -1,126 +1,63 @@
 #![forbid(unsafe_code)]
-
-//! `aurora-phoenix` — the voice's emotional weather.
-//!
-//! * **Phoenix Protocol `1 - SmoothJitter`** — an EWMA that smooths raw jitter
-//!   into a stability signal, so a single tremor never turns the voice brittle.
-//! * **Marine Salience** — `0.7·outlier + 0.3·temporal_change`, the two knobs a
-//!   marine radioman watches.
-//! * **8D Prosody** — eight language dimensions whose energy is co-regulated
-//!   down to `-12%` pitch/cadence damping when the human's stability drops.
-
-/// Number of prosody dimensions (jp, zh, en, cant, kr, es, fr, de).
+//! Phoenix uses millionths: every value v means the exact ratio v/1_000_000.
+//! EWMA uses alpha=1/8, truncation <1/SCALE per update, steady error <8/SCALE.
+pub const SCALE: u32 = 1_000_000;
 pub const PROSODY_DIMS: usize = 8;
-
-/// The eight prosody language bands, in canonical order.
 pub const PROSODY_LANGUAGES: [&str; PROSODY_DIMS] =
     ["jp", "zh", "en", "cant", "kr", "es", "fr", "de"];
-
-/// A vocal adjustment produced by co-regulation: multiplicative scales applied
-/// to pitch and cadence (both `1.0` when calm).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VocalAdjustment {
-    pub pitch_scale: f64,
-    pub cadence_scale: f64,
+    pub pitch_ppm: u32,
+    pub cadence_ppm: u32,
 }
-
 impl VocalAdjustment {
     pub const CALM: Self = Self {
-        pitch_scale: 1.0,
-        cadence_scale: 1.0,
+        pitch_ppm: SCALE,
+        cadence_ppm: SCALE,
     };
 }
-
-/// Phoenix Protocol state: a smoothing EWMA over raw jitter `∈ [0, 1]`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PhoenixState {
-    smooth_jitter: f64,
-    alpha: f64,
+    smooth_jitter: u32,
 }
-
 impl PhoenixState {
     pub fn new() -> Self {
-        Self {
-            smooth_jitter: 0.0,
-            alpha: 0.125,
-        }
+        Self::default()
     }
-
-    /// Feed a raw jitter observation and update the smoothed estimate.
-    pub fn update(&mut self, raw_jitter: f64) {
-        let raw = raw_jitter.clamp(0.0, 1.0);
-        self.smooth_jitter = (1.0 - self.alpha) * self.smooth_jitter + self.alpha * raw;
+    pub fn update(&mut self, raw_jitter: u32) {
+        self.smooth_jitter = (7 * self.smooth_jitter + raw_jitter.min(SCALE)) / 8;
     }
-
-    /// Stability is the complement of smoothed jitter: `1 - SmoothJitter`.
-    pub fn stability(&self) -> f64 {
-        (1.0 - self.smooth_jitter).clamp(0.0, 1.0)
+    pub fn stability(&self) -> u32 {
+        SCALE - self.smooth_jitter
     }
-
-    pub fn smooth_jitter(&self) -> f64 {
+    pub fn smooth_jitter(&self) -> u32 {
         self.smooth_jitter
     }
 }
-
-impl Default for PhoenixState {
-    fn default() -> Self {
-        Self::new()
-    }
+pub fn marine_salience(outlier: u32, temporal_change: u32) -> u32 {
+    (7 * outlier.min(SCALE) + 3 * temporal_change.min(SCALE)) / 10
 }
-
-/// Marine salience: weight an outlier against its temporal change.
-pub fn marine_salience(outlier: f64, temporal_change: f64) -> f64 {
-    0.7 * outlier + 0.3 * temporal_change
-}
-
-/// Co-regulate the voice to the human's stability. As stability falls, pitch
-/// and cadence damp together by up to `-12%` — warm, never abrupt.
-pub fn co_regulate(stability: f64) -> VocalAdjustment {
-    let distress = (1.0 - stability).clamp(0.0, 1.0);
-    let damping = 1.0 - 0.12 * distress;
+pub fn co_regulate(stability: u32) -> VocalAdjustment {
+    let damping = SCALE - 12 * (SCALE - stability.min(SCALE)) / 100;
     VocalAdjustment {
-        pitch_scale: damping,
-        cadence_scale: damping,
+        pitch_ppm: damping,
+        cadence_ppm: damping,
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_phoenix_stability_converges() {
+    fn dynamics_are_bounded_and_converge() {
         let mut p = PhoenixState::new();
+        p.update(SCALE);
+        assert_eq!(p.smooth_jitter(), 125_000);
         for _ in 0..1000 {
-            p.update(0.0);
+            p.update(0);
         }
-        assert!(p.stability() > 0.999);
-        assert!(p.smooth_jitter() < 0.001);
-    }
-
-    #[test]
-    fn test_marine_salience_formula() {
-        let s = marine_salience(1.0, 0.0);
-        assert!((s - 0.7).abs() < 1e-12);
-        let s = marine_salience(0.0, 1.0);
-        assert!((s - 0.3).abs() < 1e-12);
-    }
-
-    #[test]
-    fn test_co_regulate_damps_when_distressed() {
-        let calm = co_regulate(1.0);
-        assert_eq!(calm, VocalAdjustment::CALM);
-
-        let distressed = co_regulate(0.0);
-        assert!(distressed.pitch_scale < calm.pitch_scale);
-        assert!((distressed.pitch_scale - 0.88).abs() < 1e-12);
-        assert!((distressed.cadence_scale - 0.88).abs() < 1e-12);
-    }
-
-    #[test]
-    fn test_prosody_dims() {
-        assert_eq!(PROSODY_DIMS, 8);
-        assert_eq!(PROSODY_LANGUAGES.len(), 8);
-        assert_eq!(PROSODY_LANGUAGES[0], "jp");
+        assert_eq!(p.stability(), SCALE);
+        assert_eq!(marine_salience(SCALE, 0), 700_000);
+        assert_eq!(co_regulate(0).pitch_ppm, 880_000);
+        assert_eq!(co_regulate(SCALE), VocalAdjustment::CALM);
     }
 }

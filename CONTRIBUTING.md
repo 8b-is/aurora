@@ -18,9 +18,9 @@ go vet ./...
 
 ## Conventions
 
-1. **No unsafe, no floats where integers will do.** The crates are
-   `#![forbid(unsafe_code)]` and follow the strict `8b.is` no-float rule in the
-   ternary core (`aurora-core`, `aurora-infer`).
+1. **No unsafe or floating-point application arithmetic.** Use checked `Rational`
+   or documented integer scales throughout Rust/Go; BigInt for browser arithmetic.
+   Run `go run ./cmd/aurora-agy audit .`. Approximation errors must be explicit.
 2. **Zero placeholders.** No `todo!()`, `unimplemented!()`, or empty stubs.
 3. **Commit style** — Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`).
    First line under 72 characters.

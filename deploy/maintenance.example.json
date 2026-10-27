@@ -1,0 +1,10 @@
+{
+  "root": "/var/lib/aurora",
+  "memory_binary": "/usr/local/bin/aurora",
+  "endpoint": "http://127.0.0.1:11434",
+  "model": "granite4.2:30b",
+  "interval_seconds": 300,
+  "repositories": [
+    {"name": "aurora", "path": "/mnt/git160/8b-is/aurora", "base": "main"}
+  ]
+}

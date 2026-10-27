@@ -1,139 +1,144 @@
 #![forbid(unsafe_code)]
-
-//! `aurora-infer` — BitNet `b1.58` ternary inference, the `12.80x` compression
-//! against FP16 coal, and a provider seam where a hosted engine (OpenRouter
-//! `google/gemini-4-argon` via `codewhale`) can be dropped in without changing
-//! the caller.
-//!
-//! The local path is fully implemented and deterministic: weights quantize to
-//! `{-1, 0, +1}` and a layer forward pass is exact integer arithmetic.
-
-/// Quantize a real weight into a balanced ternary trit `{-1, 0, +1}` using a
-/// symmetric epsilon dead-zone.
-pub fn quantize_ternary(weight: f64, epsilon: f64) -> i8 {
-    if weight > epsilon {
-        1
-    } else if weight < -epsilon {
+//! Integer ternary primitives. These are not a pretrained language model.
+//! Real local language-model inference is provided by the Go loopback adapter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InferenceError {
+    InvalidTrit,
+    InvalidShape,
+    Overflow,
+}
+pub fn quantize_ternary(weight: i64, epsilon: u64) -> i8 {
+    if weight.unsigned_abs() <= epsilon {
+        0
+    } else if weight < 0 {
         -1
     } else {
-        0
+        1
     }
 }
-
-/// The FP16 → b1.58 compression ratio.
-pub const BITNET_COMPRESSION_RATIO: f64 = 12.80;
-
-/// A single ternary linear layer: `out × in` trit weights.
+/// Pack five balanced trits per byte, base three. No theoretical compression claim.
+pub fn pack_trits(trits: &[i8]) -> Result<Vec<u8>, InferenceError> {
+    let mut bytes = Vec::new();
+    for chunk in trits.chunks(5) {
+        let (mut byte, mut power) = (0u16, 1u16);
+        for trit in chunk {
+            if !(-1..=1).contains(trit) {
+                return Err(InferenceError::InvalidTrit);
+            }
+            byte += (*trit + 1) as u16 * power;
+            power *= 3;
+        }
+        bytes.push(byte as u8);
+    }
+    Ok(bytes)
+}
+pub fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>, InferenceError> {
+    if count.div_ceil(5) != bytes.len() {
+        return Err(InferenceError::InvalidShape);
+    }
+    let mut out = Vec::with_capacity(count);
+    for byte in bytes {
+        let mut n = *byte;
+        for _ in 0..5.min(count - out.len()) {
+            out.push((n % 3) as i8 - 1);
+            n /= 3;
+        }
+        if n != 0 {
+            return Err(InferenceError::InvalidTrit);
+        }
+    }
+    Ok(out)
+}
 #[derive(Debug, Clone)]
 pub struct TernaryLayer {
     weights: Vec<Vec<i8>>,
+    width: usize,
 }
-
 impl TernaryLayer {
-    pub fn new(weights: Vec<Vec<i8>>) -> Self {
-        Self { weights }
+    pub fn new(weights: Vec<Vec<i8>>) -> Result<Self, InferenceError> {
+        let width = weights.first().map_or(0, Vec::len);
+        if width == 0 || weights.iter().any(|r| r.len() != width) {
+            return Err(InferenceError::InvalidShape);
+        }
+        if weights.iter().flatten().any(|w| !(-1..=1).contains(w)) {
+            return Err(InferenceError::InvalidTrit);
+        }
+        Ok(Self { weights, width })
     }
-
     pub fn output_dim(&self) -> usize {
         self.weights.len()
     }
-
     pub fn input_dim(&self) -> usize {
-        self.weights.first().map_or(0, |row| row.len())
+        self.width
     }
-
-    /// Exact integer matmul: `out[j] = Σ_i W[j][i] · x[i]`.
-    pub fn forward(&self, input: &[i8]) -> Vec<i32> {
+    pub fn forward(&self, input: &[i8]) -> Result<Vec<i64>, InferenceError> {
+        if input.len() != self.width {
+            return Err(InferenceError::InvalidShape);
+        }
         self.weights
             .iter()
             .map(|row| {
-                row.iter()
-                    .zip(input)
-                    .map(|(w, x)| (*w as i32) * (*x as i32))
-                    .sum()
+                row.iter().zip(input).try_fold(0i64, |sum, (w, x)| {
+                    sum.checked_add(i64::from(*w) * i64::from(*x))
+                        .ok_or(InferenceError::Overflow)
+                })
             })
             .collect()
     }
 }
-
-fn binarize(v: i32) -> i8 {
-    if v > 0 {
-        1
-    } else if v < 0 {
-        -1
-    } else {
-        0
-    }
-}
-
-/// A BitNet b1.58 network: a stack of ternary layers with binarized activations
-/// between them and a raw integer readout at the head.
 #[derive(Debug, Clone)]
 pub struct BitNetB158 {
     layers: Vec<TernaryLayer>,
 }
-
 impl BitNetB158 {
-    pub fn new(layers: Vec<TernaryLayer>) -> Self {
-        Self { layers }
-    }
-
-    pub fn forward(&self, input: &[i8]) -> Vec<i32> {
-        let mut activations: Vec<i8> = input.to_vec();
-        for (i, layer) in self.layers.iter().enumerate() {
-            let out = layer.forward(&activations);
-            if i + 1 == self.layers.len() {
-                return out;
-            }
-            activations = out.iter().map(|&v| binarize(v)).collect();
+    pub fn new(layers: Vec<TernaryLayer>) -> Result<Self, InferenceError> {
+        if layers.is_empty()
+            || layers
+                .windows(2)
+                .any(|w| w[0].output_dim() != w[1].input_dim())
+        {
+            return Err(InferenceError::InvalidShape);
         }
-        Vec::new()
+        Ok(Self { layers })
+    }
+    pub fn forward(&self, input: &[i8]) -> Result<Vec<i64>, InferenceError> {
+        let mut act = input.to_vec();
+        for (i, layer) in self.layers.iter().enumerate() {
+            let out = layer.forward(&act)?;
+            if i + 1 == self.layers.len() {
+                return Ok(out);
+            }
+            act = out.iter().map(|v| v.signum() as i8).collect();
+        }
+        Err(InferenceError::InvalidShape)
     }
 }
-
-/// Provider seam: a hosted inference engine can be mounted here without the
-/// dyad or voice shell caring which engine answers. The local ternary engine
-/// is the always-available default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProviderKind {
-    LocalTernary,
-    HostedArgon4,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn test_quantize_ternary_thresholds() {
-        assert_eq!(quantize_ternary(0.5, 0.25), 1);
-        assert_eq!(quantize_ternary(-0.5, 0.25), -1);
-        assert_eq!(quantize_ternary(0.1, 0.25), 0);
-        assert_eq!(quantize_ternary(-0.1, 0.25), 0);
-    }
-
-    #[test]
-    fn test_ternary_layer_forward() {
-        // out = [[1, -1]] over inputs [1, 1] → 0; over [1, -1] → 2.
-        let layer = TernaryLayer::new(vec![vec![1, -1]]);
-        assert_eq!(layer.forward(&[1, 1]), vec![0]);
-        assert_eq!(layer.forward(&[1, -1]), vec![2]);
-        assert_eq!(layer.output_dim(), 1);
-        assert_eq!(layer.input_dim(), 2);
-    }
-
-    #[test]
-    fn test_bitnet_forward() {
+    fn integer_quantization_and_shapes() {
+        assert_eq!(quantize_ternary(i64::MIN, 25), -1);
+        assert_eq!(quantize_ternary(25, 25), 0);
+        assert!(TernaryLayer::new(vec![vec![1], vec![1, 0]]).is_err());
         let net = BitNetB158::new(vec![
-            TernaryLayer::new(vec![vec![1, -1], vec![1, 1]]),
-            TernaryLayer::new(vec![vec![1, 1]]),
-        ]);
-        // input [1, -1] → hidden [2, 0] → binarized [1, 0] → head 1*1 + 1*0 = 1
-        assert_eq!(net.forward(&[1, -1]), vec![1]);
+            TernaryLayer::new(vec![vec![1, -1], vec![1, 1]]).unwrap(),
+            TernaryLayer::new(vec![vec![1, 1]]).unwrap(),
+        ])
+        .unwrap();
+        assert_eq!(net.forward(&[1, -1]).unwrap(), vec![1]);
+        assert_eq!(net.forward(&[1]), Err(InferenceError::InvalidShape));
     }
-
     #[test]
-    fn test_compression_constant() {
-        assert_eq!(BITNET_COMPRESSION_RATIO, 12.80);
+    fn packed_roundtrip_all_five_trit_words() {
+        for byte in 0..243u8 {
+            let t = unpack_trits(&[byte], 5).unwrap();
+            assert_eq!(pack_trits(&t).unwrap(), vec![byte]);
+        }
+        for count in 0..17 {
+            let t = vec![-1; count];
+            assert_eq!(unpack_trits(&pack_trits(&t).unwrap(), count).unwrap(), t);
+        }
+        assert!(unpack_trits(&[255], 5).is_err());
     }
 }

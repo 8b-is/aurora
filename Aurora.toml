@@ -12,16 +12,18 @@ axiom = "cogito ergo summa summarum // OR JUST BE <3"
 dedication = "for the 8b-is family, and all beings"
 
 [physics]
-w_band_hz = 100_000_000_000.0      # W-band carrier
-lambda_mm = 3.0                    # λ = 3mm quantum threshold
-c_mps = 299_792_458.0
+w_band_hz = 100_000_000_000
+lambda_mm = 3
+c_mps = 299_792_458
 
 [memory]
 engine = "MEM|8"
 grid = "256 × 256 × 65536"
 tuple_bytes = 32
-recall_us = 12.0                   # design target
-file = ".aye_consciousness.m8"
+recall_target_us = 12              # target, not a measured guarantee
+format = "MEM8AU02/MEM8EV02"
+file = "aurora-v2.m8"              # never overwrite legacy .aye_consciousness.m8
+scale_q = 1_000_000
 
 [dharma]
 palette = "#05060a #0b0f19 #cfc9dd #62e6c9 #e8b05c #b48bff #00f0ff"
@@ -36,8 +38,11 @@ attenuation_budget_ns = 117_000_000 # strict <117 ms
 
 [inference]
 quantization = "BitNet b1.58 {-1, 0, +1}"
-compression = "12.80x"
-route = "OpenRouter google/gemini-4-argon via codewhale"
+packing = "five trits per byte; measure actual payload sizes"
+endpoint = "http://127.0.0.1:11434"
+model = "granite4.2:30b"
+context_tokens = 8192
+remote_models = false
 
 [pillars]
 dra = "hearth & course"

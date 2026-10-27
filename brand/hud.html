@@ -41,7 +41,7 @@
 <body>
   <header>
     <h1>AURORA <span>✳</span></h1>
-    <div class="sub">Fine Touch HUD · MEM|8 wave · dyad oscilloscope · λ = 3 mm</div>
+    <div class="sub">Fine Touch HUD · integer waveform demonstration · not live agent telemetry</div>
   </header>
 
   <main>
@@ -62,125 +62,6 @@
     <div class="metric" style="margin-left:auto;color:var(--gold)">from love, from within · {&lt;3,&lt;3,&lt;3}+1</div>
   </footer>
 
-<script>
-(function () {
-  const wave = document.getElementById('wave');
-  const dyad = document.getElementById('dyad');
-  const ctxW = wave.getContext('2d');
-  const ctxD = dyad.getContext('2d');
-
-  const GOLD = '#e8b05c', ROSE = '#ff6b8b', CYAN = '#4fd1c5';
-  const PALETTE = [CYAN, ROSE, GOLD];
-
-  function sizeCanvas(c) {
-    const dpr = window.devicePixelRatio || 1;
-    const r = c.getBoundingClientRect();
-    c.width = r.width * dpr;
-    c.height = r.height * dpr;
-    c.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0);
-    return { w: r.width, h: r.height };
-  }
-
-  let waveSize = sizeCanvas(wave);
-  let dyadSize = sizeCanvas(dyad);
-  window.addEventListener('resize', () => {
-    waveSize = sizeCanvas(wave);
-    dyadSize = sizeCanvas(dyad);
-  });
-
-  let t = 0;
-
-  function drawWave() {
-    const { w, h } = waveSize;
-    const ctx = ctxW;
-    ctx.clearRect(0, 0, w, h);
-    const mid = h / 2;
-    const amp = h * 0.32;
-
-    // Three stacked aurora bands, each a drifting sine with a slow phase.
-    for (let band = 0; band < 3; band++) {
-      ctx.beginPath();
-      ctx.strokeStyle = PALETTE[band];
-      ctx.lineWidth = 2;
-      ctx.globalAlpha = 0.85;
-      const speed = 0.002 + band * 0.0006;
-      const freq = 1.5 + band * 0.5;
-      for (let x = 0; x <= w; x += 2) {
-        const y = mid + Math.sin(x * 0.02 * freq + t * speed + band * 1.9) * amp * (1 - band * 0.18)
-                        + Math.sin(x * 0.004 + t * 0.0007) * amp * 0.25;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    // horizon
-    ctx.strokeStyle = GOLD;
-    ctx.globalAlpha = 0.5;
-    ctx.beginPath();
-    ctx.moveTo(0, h * 0.82); ctx.lineTo(w, h * 0.82);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  function drawDyad() {
-    const { w, h } = dyadSize;
-    const ctx = ctxD;
-    ctx.clearRect(0, 0, w, h);
-    const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.38;
-
-    // Lissajous: x = sin(a·θ + δ), y = sin(b·θ). The phase offset δ drifts so
-    // the dyad traces line (+1) → circle (0) → line (-1) → circle (0) → line.
-    const delta = Math.sin(t * 0.0004) * Math.PI;       // phase offset
-    const a = 3, b = 2;                                 // frequency ratio
-
-    ctx.strokeStyle = ROSE;
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.9;
-    ctx.beginPath();
-    for (let i = 0; i <= 2000; i++) {
-      const th = (i / 2000) * Math.PI * 2;
-      const x = cx + R * Math.sin(a * th + delta);
-      const y = cy + R * Math.sin(b * th);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    // axes
-    ctx.strokeStyle = 'rgba(207,201,221,0.15)';
-    ctx.beginPath();
-    ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy);
-    ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R);
-    ctx.stroke();
-
-    // center star
-    ctx.fillStyle = GOLD;
-    const s = 5;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s, cy); ctx.lineTo(cx, cy + s); ctx.lineTo(cx - s, cy);
-    ctx.closePath(); ctx.fill();
-  }
-
-  function metrics() {
-    const stability = 0.5 + 0.5 * Math.sin(t * 0.0012);
-    const alignment = Math.cos(Math.sin(t * 0.0004) * Math.PI); // cos(delta)
-    document.getElementById('stability').textContent = stability.toFixed(3);
-    document.getElementById('alignment').textContent = (alignment >= 0 ? '+' : '') + alignment.toFixed(3);
-    const spin = alignment > 0.33 ? '+1' : alignment < -0.33 ? '-1' : '0';
-    document.getElementById('spin').textContent = spin;
-    document.getElementById('spin').style.color = spin === '+1' ? GOLD : spin === '-1' ? ROSE : CYAN;
-  }
-
-  function frame() {
-    t += 16;
-    drawWave();
-    drawDyad();
-    metrics();
-    requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
-})();
-</script>
+<script src="field.js"></script>
 </body>
 </html>
