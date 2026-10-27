@@ -99,6 +99,7 @@ go test ./...
 
 | Asset | File |
 | --- | --- |
+| Landing page | [`index.html`](index.html) — offline, in-browser, TeamLab-style |
 | Hero (1600×900) | [`brand/aurora-hero.svg`](brand/aurora-hero.svg) · [PNG](brand/aurora-hero.png) |
 | Logo | [`brand/aurora-logo.svg`](brand/aurora-logo.svg) |
 | App icon | [`brand/aurora-icon.svg`](brand/aurora-icon.svg) · [512](brand/aurora-icon-512.png) · [1024](brand/aurora-icon-1024.png) |
