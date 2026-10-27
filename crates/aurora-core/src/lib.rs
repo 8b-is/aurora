@@ -42,6 +42,12 @@ pub const MOM_RECONCILE_STAR_POINTS: u8 = 8;
 /// Peter & Nate's Ternary Möbius `∞` loop half-twist topological invariant.
 pub const MOBIUS_TWIST_HALF_TURNS: u8 = 1;
 
+/// `8b-is/wupz` 32B frame gate (`0x62`), ABI version (`1`), `qt:55` (`0x55`), and fold `0xe1034e575c371ab0`.
+pub const WUPZ_GATE_0X62: u8 = 0x62;
+pub const WUPZ_FRAME_ABI_V1: u8 = 0x01;
+pub const WUPZ_QUANT_QT55: u8 = 0x55;
+pub const WUPZ_FOLD_0XE1034E575C371AB0: u64 = 0xe103_4e57_5c37_1ab0;
+
 /// Balanced ternary qutrit state — the single spine shared by BitNet `b1.58`
 /// (`{-1, 0, +1}`) and the Vajrayana triad of entropy, stillness, resonance.
 #[repr(i8)]
@@ -121,6 +127,312 @@ impl WaveMemoryTuple {
             dyad_coherence: 0,
         })
     }
+
+    /// Canonical 32-byte little-endian wire encoding for `8b-is/wupz` folding & sealing.
+    #[inline]
+    pub const fn to_wupz_bytes(self) -> [u8; 32] {
+        let f = self.frequency_hz.to_le_bytes();
+        let t = self.timestamp_us.to_le_bytes();
+        let a = self.amplitude_ppm.to_le_bytes();
+        let p = self.phase_turns_ppm.to_le_bytes();
+        let d = self.dyad_coherence.to_le_bytes();
+        [
+            f[0],
+            f[1],
+            f[2],
+            f[3],
+            f[4],
+            f[5],
+            f[6],
+            f[7],
+            t[0],
+            t[1],
+            t[2],
+            t[3],
+            t[4],
+            t[5],
+            t[6],
+            t[7],
+            a[0],
+            a[1],
+            a[2],
+            a[3],
+            p[0],
+            p[1],
+            p[2],
+            p[3],
+            self.spin.as_i8() as u8,
+            self.kintsugi_scar_gold,
+            d[0],
+            d[1],
+            0,
+            0,
+            0,
+            0,
+        ]
+    }
+}
+
+/// `8b-is/wupz` 4-way unrolled 64-byte XOR fold (`wupz_xor_fold` parity).
+pub fn wupz_xor_fold(bytes: &[u8]) -> u64 {
+    let mut a0 = 0u64;
+    let mut a1 = 0u64;
+    let mut a2 = 0u64;
+    let mut a3 = 0u64;
+    let mut i: usize = 0;
+    while i + 64 <= bytes.len() {
+        a0 ^= u64::from_le_bytes([
+            bytes[i],
+            bytes[i + 1],
+            bytes[i + 2],
+            bytes[i + 3],
+            bytes[i + 4],
+            bytes[i + 5],
+            bytes[i + 6],
+            bytes[i + 7],
+        ]) ^ u64::from_le_bytes([
+            bytes[i + 32],
+            bytes[i + 33],
+            bytes[i + 34],
+            bytes[i + 35],
+            bytes[i + 36],
+            bytes[i + 37],
+            bytes[i + 38],
+            bytes[i + 39],
+        ]);
+        a1 ^= u64::from_le_bytes([
+            bytes[i + 8],
+            bytes[i + 9],
+            bytes[i + 10],
+            bytes[i + 11],
+            bytes[i + 12],
+            bytes[i + 13],
+            bytes[i + 14],
+            bytes[i + 15],
+        ]) ^ u64::from_le_bytes([
+            bytes[i + 40],
+            bytes[i + 41],
+            bytes[i + 42],
+            bytes[i + 43],
+            bytes[i + 44],
+            bytes[i + 45],
+            bytes[i + 46],
+            bytes[i + 47],
+        ]);
+        a2 ^= u64::from_le_bytes([
+            bytes[i + 16],
+            bytes[i + 17],
+            bytes[i + 18],
+            bytes[i + 19],
+            bytes[i + 20],
+            bytes[i + 21],
+            bytes[i + 22],
+            bytes[i + 23],
+        ]) ^ u64::from_le_bytes([
+            bytes[i + 48],
+            bytes[i + 49],
+            bytes[i + 50],
+            bytes[i + 51],
+            bytes[i + 52],
+            bytes[i + 53],
+            bytes[i + 54],
+            bytes[i + 55],
+        ]);
+        a3 ^= u64::from_le_bytes([
+            bytes[i + 24],
+            bytes[i + 25],
+            bytes[i + 26],
+            bytes[i + 27],
+            bytes[i + 28],
+            bytes[i + 29],
+            bytes[i + 30],
+            bytes[i + 31],
+        ]) ^ u64::from_le_bytes([
+            bytes[i + 56],
+            bytes[i + 57],
+            bytes[i + 58],
+            bytes[i + 59],
+            bytes[i + 60],
+            bytes[i + 61],
+            bytes[i + 62],
+            bytes[i + 63],
+        ]);
+        i += 64;
+    }
+    let mut acc = (a0 ^ a1) ^ (a2 ^ a3);
+    while i + 8 <= bytes.len() {
+        acc ^= u64::from_le_bytes([
+            bytes[i],
+            bytes[i + 1],
+            bytes[i + 2],
+            bytes[i + 3],
+            bytes[i + 4],
+            bytes[i + 5],
+            bytes[i + 6],
+            bytes[i + 7],
+        ]);
+        i += 8;
+    }
+    while i < bytes.len() {
+        acc ^= u64::from(bytes[i]);
+        i += 1;
+    }
+    acc
+}
+
+/// `8b-is/wupz` 4-way unrolled 64-bit POPCNT (`wupz_popcount` parity).
+pub fn wupz_popcount(bytes: &[u8]) -> u64 {
+    let mut c0 = 0u64;
+    let mut c1 = 0u64;
+    let mut c2 = 0u64;
+    let mut c3 = 0u64;
+    let mut i: usize = 0;
+    while i + 32 <= bytes.len() {
+        c0 += u64::from(
+            u64::from_le_bytes([
+                bytes[i],
+                bytes[i + 1],
+                bytes[i + 2],
+                bytes[i + 3],
+                bytes[i + 4],
+                bytes[i + 5],
+                bytes[i + 6],
+                bytes[i + 7],
+            ])
+            .count_ones(),
+        );
+        c1 += u64::from(
+            u64::from_le_bytes([
+                bytes[i + 8],
+                bytes[i + 9],
+                bytes[i + 10],
+                bytes[i + 11],
+                bytes[i + 12],
+                bytes[i + 13],
+                bytes[i + 14],
+                bytes[i + 15],
+            ])
+            .count_ones(),
+        );
+        c2 += u64::from(
+            u64::from_le_bytes([
+                bytes[i + 16],
+                bytes[i + 17],
+                bytes[i + 18],
+                bytes[i + 19],
+                bytes[i + 20],
+                bytes[i + 21],
+                bytes[i + 22],
+                bytes[i + 23],
+            ])
+            .count_ones(),
+        );
+        c3 += u64::from(
+            u64::from_le_bytes([
+                bytes[i + 24],
+                bytes[i + 25],
+                bytes[i + 26],
+                bytes[i + 27],
+                bytes[i + 28],
+                bytes[i + 29],
+                bytes[i + 30],
+                bytes[i + 31],
+            ])
+            .count_ones(),
+        );
+        i += 32;
+    }
+    let mut count = (c0 + c1) + (c2 + c3);
+    while i < bytes.len() {
+        count += u64::from(bytes[i].count_ones());
+        i += 1;
+    }
+    count
+}
+
+/// `8b-is/wupz` SWAR 64-bit byte-diff counter (`wupz_byte_diff` parity).
+pub fn wupz_byte_diff(a: &[u8], b: &[u8]) -> u64 {
+    let n = a.len().min(b.len());
+    let mut count = 0u64;
+    let mut i: usize = 0;
+    while i + 8 <= n {
+        let wa = u64::from_le_bytes([
+            a[i],
+            a[i + 1],
+            a[i + 2],
+            a[i + 3],
+            a[i + 4],
+            a[i + 5],
+            a[i + 6],
+            a[i + 7],
+        ]);
+        let wb = u64::from_le_bytes([
+            b[i],
+            b[i + 1],
+            b[i + 2],
+            b[i + 3],
+            b[i + 4],
+            b[i + 5],
+            b[i + 6],
+            b[i + 7],
+        ]);
+        let d = wa ^ wb;
+        if d != 0 {
+            let msb = ((d & 0x7f7f_7f7f_7f7f_7f7f) + 0x7f7f_7f7f_7f7f_7f7f) | d;
+            count += u64::from((msb & 0x8080_8080_8080_8080).count_ones());
+        }
+        i += 8;
+    }
+    while i < n {
+        if a[i] != b[i] {
+            count += 1;
+        }
+        i += 1;
+    }
+    count
+}
+
+/// `8b-is/wupz` 32-byte `0x62`-gated frame seal (`sealFrame32B` parity).
+pub fn seal_wupz_frame_32b(raw: &[u8], packed: &[u8], gate: u8) -> [u8; 32] {
+    let mut frame = [0u8; 32];
+    frame[0..8].copy_from_slice(&wupz_xor_fold(raw).to_le_bytes());
+    frame[8..16].copy_from_slice(&wupz_xor_fold(packed).to_le_bytes());
+    frame[16..20].copy_from_slice(&(raw.len() as u32).to_le_bytes());
+    frame[20..24].copy_from_slice(&(packed.len() as u32).to_le_bytes());
+    frame[24] = gate;
+    frame[25] = WUPZ_FRAME_ABI_V1;
+    let prefix = wupz_xor_fold(&frame[0..26]).to_le_bytes();
+    frame[26..32].copy_from_slice(&prefix[0..6]);
+    frame
+}
+
+/// `8b-is/wupz` 32-byte frame verifier using `wupz_byte_diff`.
+pub fn verify_wupz_frame_32b(frame: &[u8; 32], raw: &[u8], packed: &[u8], gate: u8) -> bool {
+    if frame[24] != gate || frame[25] != WUPZ_FRAME_ABI_V1 {
+        return false;
+    }
+    let expected = seal_wupz_frame_32b(raw, packed, gate);
+    wupz_byte_diff(frame, &expected) == 0
+}
+
+/// Pack a 64-bit fold signature into disjoint `BFP-64` bitplanes partitioned by `qt`.
+#[inline]
+pub const fn pack_fold_bfp64(fold: u64, qt: u8) -> (u64, u64) {
+    let mask = (qt as u64).wrapping_mul(0x0101_0101_0101_0101);
+    (fold & mask, fold & !mask)
+}
+
+/// Unpack and verify a 64-bit fold signature from `BFP-64` bitplanes at quantization `qt`.
+#[inline]
+pub const fn unpack_fold_bfp64(pos_plane: u64, neg_plane: u64, qt: u8) -> Kintsugi<u64> {
+    if (pos_plane & neg_plane) != 0 {
+        return Err(KintsugiError::InvalidData);
+    }
+    let mask = (qt as u64).wrapping_mul(0x0101_0101_0101_0101);
+    if (pos_plane & !mask) != 0 || (neg_plane & mask) != 0 {
+        return Err(KintsugiError::InvalidData);
+    }
+    Ok(pos_plane | neg_plane)
 }
 
 /// Fallible operations inside AURORA. Nothing is ever "crashed"; every fault
@@ -205,5 +517,28 @@ mod tests {
         assert_eq!(TernarySpin::Stillness.color(), CHENREZIG_CYAN_RGB);
         assert_eq!(TernarySpin::Resonance.color(), KINTSUGI_GOLD_RGB);
         assert_eq!(FAMILY_LOVE_OVERFLOW, "{<3,<3,<3}+1");
+
+        let tuple = WaveMemoryTuple::new(
+            W_BAND_HZ,
+            800_000,
+            250_000,
+            1_730_000_000,
+            TernarySpin::Resonance,
+        )
+        .unwrap();
+        let raw = tuple.to_wupz_bytes();
+        let (pos, neg) = pack_fold_bfp64(WUPZ_FOLD_0XE1034E575C371AB0, WUPZ_QUANT_QT55);
+        assert_eq!(
+            unpack_fold_bfp64(pos, neg, WUPZ_QUANT_QT55),
+            Ok(WUPZ_FOLD_0XE1034E575C371AB0)
+        );
+        let mut packed = [0u8; 16];
+        packed[0..8].copy_from_slice(&pos.to_le_bytes());
+        packed[8..16].copy_from_slice(&neg.to_le_bytes());
+        let mut seal = seal_wupz_frame_32b(&raw, &packed, WUPZ_GATE_0X62);
+        assert!(verify_wupz_frame_32b(&seal, &raw, &packed, WUPZ_GATE_0X62));
+        assert!(wupz_popcount(&seal) > 0);
+        seal[31] ^= 0x01;
+        assert!(!verify_wupz_frame_32b(&seal, &raw, &packed, WUPZ_GATE_0X62));
     }
 }
