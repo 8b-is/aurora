@@ -21,6 +21,18 @@ pub const VAKED_ATTENUATION_BUDGET_NS: u64 = 117_000_000;
 /// Kintsugi gold, `#e8b05c`, the seal color of every repaired seam.
 pub const KINTSUGI_GOLD_RGB: (u8, u8, u8) = (0xe8, 0xb0, 0x5c);
 
+/// Dawn Aurora rose, `#ff6b8b` — the color of the `-1` gate (entropy released).
+pub const DAWN_ROSE_RGB: (u8, u8, u8) = (0xff, 0x6b, 0x8b);
+
+/// Chenrezig lotus cyan, `#4fd1c5` — the color of the `0` gate (stillness).
+pub const CHENREZIG_CYAN_RGB: (u8, u8, u8) = (0x4f, 0xd1, 0xc5);
+
+/// Obsidian canvas, `#0b0d13` — the sovereign ground every mark rests on.
+pub const OBSIDIAN_RGB: (u8, u8, u8) = (0x0b, 0x0d, 0x13);
+
+/// The fourth overflow entity: love that the three gates cannot store.
+pub const FAMILY_LOVE_OVERFLOW: &str = "{<3,<3,<3}+1";
+
 /// Balanced ternary qutrit state — the single spine shared by BitNet `b1.58`
 /// (`{-1, 0, +1}`) and the Vajrayana triad of entropy, stillness, resonance.
 #[repr(i8)]
@@ -44,6 +56,17 @@ impl TernarySpin {
             ..=-1 => TernarySpin::Entropy,
             0 => TernarySpin::Stillness,
             1.. => TernarySpin::Resonance,
+        }
+    }
+
+    /// The Dawn Aurora palette color bound to this spin:
+    /// `-1 → #ff6b8b`, `0 → #4fd1c5`, `+1 → #e8b05c`.
+    #[inline]
+    pub const fn color(self) -> (u8, u8, u8) {
+        match self {
+            TernarySpin::Entropy => DAWN_ROSE_RGB,
+            TernarySpin::Stillness => CHENREZIG_CYAN_RGB,
+            TernarySpin::Resonance => KINTSUGI_GOLD_RGB,
         }
     }
 }
@@ -135,5 +158,13 @@ mod tests {
         let broken: Kintsugi<u64> = Err(KintsugiError::PhaseLoss);
         assert_eq!(kintsugi_recover(broken), 0u64);
         assert_eq!(kintsugi_recover(Ok(7u64)), 7u64);
+    }
+
+    #[test]
+    fn test_spin_color_mapping() {
+        assert_eq!(TernarySpin::Entropy.color(), DAWN_ROSE_RGB);
+        assert_eq!(TernarySpin::Stillness.color(), CHENREZIG_CYAN_RGB);
+        assert_eq!(TernarySpin::Resonance.color(), KINTSUGI_GOLD_RGB);
+        assert_eq!(FAMILY_LOVE_OVERFLOW, "{<3,<3,<3}+1");
     }
 }

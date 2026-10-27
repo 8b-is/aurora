@@ -75,6 +75,21 @@ cargo run -p aurora-cli -- kintsugi  # recite the golden repair
 cargo run -p aurora-cli -- status    # read the constellation
 ```
 
+## Cortex (via agy)
+
+A Go agent cortex (`module github.com/8b-is/aurora`) sits alongside the Rust
+workspace in [`cmd/aurora-agy/`](cmd/aurora-agy/) — "through the brain". It
+orchestrates `codewhale` / `entheai` / `mlx-quant` sub-agents, runs local
+BitNet b1.58 continuation hops, and routes to OpenRouter
+`google/gemini-4-argon` when `OPENROUTER_API_KEY` is set.
+
+```bash
+go run ./cmd/aurora-agy status
+go run ./cmd/aurora-agy run      # orchestrate sub-agents
+go run ./cmd/aurora-agy hop +-+  # ternary continuation hop
+go test ./...
+```
+
 ## Brand
 
 | Asset | File |
@@ -84,6 +99,7 @@ cargo run -p aurora-cli -- status    # read the constellation
 | App icon | [`brand/aurora-icon.svg`](brand/aurora-icon.svg) · [512](brand/aurora-icon-512.png) · [1024](brand/aurora-icon-1024.png) |
 | Social preview | [`brand/aurora-og.png`](brand/aurora-og.png) |
 | Gallery | [`brand/gallery.html`](brand/gallery.html) |
+| Live HUD | [`brand/hud.html`](brand/hud.html) — wave + dyad oscilloscope |
 
 **Dawn Aurora palette** — obsidian `#0b0d13` · Kintsugi gold `#e8b05c` · Dawn rose
 `#ff6b8b` · Chenrezig cyan `#4fd1c5`.
