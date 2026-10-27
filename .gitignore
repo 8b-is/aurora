@@ -5,3 +5,4 @@
 /aurora-agy
 /.st/
 *.m8.lock
+deploy/worker.js

@@ -28,7 +28,9 @@ func run(args []string) error {
 		}
 		fmt.Println("source numeric guard passed")
 	case "help", "--help", "-h":
-		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
+		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | omnifold | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
+	case "omnifold":
+		return runOmnifold()
 	case "hop":
 		input, err := parseTrits(strings.Join(args[1:], ""))
 		if err != nil {
