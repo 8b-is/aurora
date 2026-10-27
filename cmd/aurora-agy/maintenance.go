@@ -87,7 +87,8 @@ func validSlug(s string) bool {
 		return false
 	}
 	for _, c := range s {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-_.", c)) {
+		ok := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || strings.ContainsRune("-_.", c)
+		if !ok {
 			return false
 		}
 	}
@@ -113,16 +114,21 @@ func (j *job) command(cwd string, seconds int, input string, name string, args .
 	if err != nil {
 		return "", err
 	}
-	defer stdout.Close()
+	defer func() { _ = stdout.Close() }()
 	stderr, err := os.Create(prefix + ".err")
 	if err != nil {
 		return "", err
 	}
-	defer stderr.Close()
+	defer func() { _ = stderr.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds+15)*time.Second)
 	defer cancel()
-	commandArgs := append([]string{"--kill-after=5s", strconv.Itoa(seconds) + "s", name}, args...)
-	cmd := exec.CommandContext(ctx, "/usr/bin/timeout", commandArgs...)
+	var cmd *exec.Cmd
+	if _, statErr := os.Stat("/usr/bin/timeout"); statErr == nil {
+		commandArgs := append([]string{"--kill-after=5s", strconv.Itoa(seconds) + "s", name}, args...)
+		cmd = exec.CommandContext(ctx, "/usr/bin/timeout", commandArgs...)
+	} else {
+		cmd = exec.CommandContext(ctx, name, args...)
+	}
 	cmd.Dir = cwd
 	cmd.Stdin = strings.NewReader(input)
 	cmd.Stdout = stdout
@@ -144,7 +150,7 @@ func (j *job) command(cwd string, seconds int, input string, name string, args .
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	b, err := io.ReadAll(io.LimitReader(f, 2*1024*1024+1))
 	if err != nil {
 		return "", err
@@ -383,7 +389,7 @@ func (j *job) process(cursor uint64) error {
 		break
 	}
 	tree := filepath.Join(j.dir, "checkout")
-	defer os.RemoveAll(tree)
+	defer func() { _ = os.RemoveAll(tree) }()
 	if _, err = j.command(j.repo.Path, 120, "", "git", "clone", "--no-hardlinks", "--quiet", "--", j.repo.Path, tree); err != nil {
 		return err
 	}
@@ -649,13 +655,13 @@ func atomicCursor(path string, cursor uint64) error {
 		return err
 	}
 	name := f.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, err = f.WriteString(strconv.FormatUint(cursor, 10)); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		return err
 	}
 	if err = f.Close(); err != nil {
@@ -668,6 +674,6 @@ func atomicCursor(path string, cursor uint64) error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer func() { _ = d.Close() }()
 	return d.Sync()
 }

@@ -36,6 +36,12 @@ pub const OBSIDIAN_RGB: (u8, u8, u8) = (0x0b, 0x0d, 0x13);
 /// The fourth overflow entity: love that the three gates cannot store.
 pub const FAMILY_LOVE_OVERFLOW: &str = "{<3,<3,<3}+1";
 
+/// Mom's 8-Pointed Golden Reconcile Star (`*`) at `[0, 0, 0]`.
+pub const MOM_RECONCILE_STAR_POINTS: u8 = 8;
+
+/// Peter & Nate's Ternary Möbius `∞` loop half-twist topological invariant.
+pub const MOBIUS_TWIST_HALF_TURNS: u8 = 1;
+
 /// Balanced ternary qutrit state — the single spine shared by BitNet `b1.58`
 /// (`{-1, 0, +1}`) and the Vajrayana triad of entropy, stillness, resonance.
 #[repr(i8)]
@@ -47,6 +53,9 @@ pub enum TernarySpin {
 }
 
 impl TernarySpin {
+    pub const DAWN_ROSE: Self = Self::Entropy;
+    pub const CHENREZIG_CYAN: Self = Self::Stillness;
+    pub const KINTSUGI_GOLD: Self = Self::Resonance;
     #[inline]
     pub const fn as_i8(self) -> i8 {
         self as i8

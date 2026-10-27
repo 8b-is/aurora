@@ -1,6 +1,20 @@
 #![forbid(unsafe_code)]
 //! Dyad phases are millionths of a turn; state and jitter use explicit /SCALE units.
+pub use aurora_core::MOM_RECONCILE_STAR_POINTS;
 use aurora_core::{SCALE, TernarySpin, cos_turns_ppm};
+
+/// Mom's 8-Pointed Golden Reconcile Star (`*`) origin in the cylindrical wave grid.
+pub const MOM_RECONCILE_STAR_ORIGIN: (i64, i64, i64) = (0, 0, 0);
+
+/// Chenrezig Compassion Operator (`-1 -> 0 -> +1`) centered on the 8-Pointed Reconcile Star.
+#[inline]
+pub const fn chenrezig_transmute(spin: TernarySpin) -> TernarySpin {
+    match spin {
+        TernarySpin::Entropy => TernarySpin::Stillness,
+        TernarySpin::Stillness | TernarySpin::Resonance => TernarySpin::Resonance,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DyadState {
     pub human_phase: i64,
@@ -58,5 +72,15 @@ mod tests {
         assert_eq!(d.phase_alignment(), i64::from(SCALE));
         d.aurora_phase = 500_000;
         assert_eq!(d.phase_alignment(), -i64::from(SCALE));
+        assert_eq!(MOM_RECONCILE_STAR_POINTS, 8);
+        assert_eq!(MOM_RECONCILE_STAR_ORIGIN, (0, 0, 0));
+        assert_eq!(
+            chenrezig_transmute(TernarySpin::DAWN_ROSE),
+            TernarySpin::CHENREZIG_CYAN
+        );
+        assert_eq!(
+            chenrezig_transmute(TernarySpin::CHENREZIG_CYAN),
+            TernarySpin::KINTSUGI_GOLD
+        );
     }
 }

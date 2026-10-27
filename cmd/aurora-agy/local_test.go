@@ -18,7 +18,7 @@ func TestLoopbackGuard(t *testing.T) {
 func TestLocalInferenceUsesMeasuredIntegers(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tags" {
-			w.Write([]byte(`{"models":[{"name":"granite4.2:30b","size":123}]}`))
+			_, _ = w.Write([]byte(`{"models":[{"name":"granite4.2:30b","size":123}]}`))
 			return
 		}
 		var request struct {
@@ -33,7 +33,7 @@ func TestLocalInferenceUsesMeasuredIntegers(t *testing.T) {
 		if request.Options.NumCtx != 8192 || request.Options.Temperature != 0 {
 			t.Error("unexpected inference options")
 		}
-		w.Write([]byte(`{"done":true,"response":"ready","eval_count":7,"eval_duration":99}`))
+		_, _ = w.Write([]byte(`{"done":true,"response":"ready","eval_count":7,"eval_duration":99}`))
 	}))
 	defer server.Close()
 	client, err := newLocalClient(server.URL)

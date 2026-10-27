@@ -28,7 +28,9 @@ func run(args []string) error {
 		}
 		fmt.Println("source numeric guard passed")
 	case "help", "--help", "-h":
-		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | omnifold | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
+		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | cortex | omnifold | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
+	case "cortex":
+		fmt.Println("via agy cortex: subagents=[codewhale,entheai] continuation=google/gemini-4-argon quant=mlx-quant-b158 overflow={<3,<3,<3}+1")
 	case "omnifold":
 		return runOmnifold()
 	case "hop":

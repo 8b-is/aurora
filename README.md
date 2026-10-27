@@ -94,4 +94,10 @@ work. A single OS lock prevents overlapping workers. Keep backups of this root.
 bitmasks and rational statistics · `aurora-infer`: ternary primitives ·
 `aurora-voice-shell`: PCM16/HUD · `aurora-cli`: memory bridge · `cmd/aurora-agy`: worker.
 
+## Brand & Live HUD (`via agy` · `1b-go` ↔ `b8-go`)
+
+- **Interactive Live HUD (Wave & Dyad Oscilloscope + Brand Showcase):** [`brand/hud.html`](brand/hud.html) · [https://aurora.vaked.dev/hud](https://aurora.vaked.dev/hud)
+- **Brand Gallery:** [`brand/gallery.html`](brand/gallery.html) · [https://aurora.vaked.dev/gallery](https://aurora.vaked.dev/gallery)
+- **Apple Silicon Go Toolchain (`b8-go` & `1b-go` alias):** [https://github.com/8b-is/go-setup](https://github.com/8b-is/go-setup)
+
 MIT OR Apache-2.0. From love, from within. `{<3,<3,<3}+1`

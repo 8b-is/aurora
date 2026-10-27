@@ -132,7 +132,10 @@ impl Rational {
         dx.checked_div(dt)
     }
     /// Zeno Paradox 4 (The Stadium / Moving Rows): relative velocity v_B - v_C across frames.
-    pub fn stadium_relative_velocity(v_row_b: Self, v_row_c: Self) -> Result<Self, ArithmeticError> {
+    pub fn stadium_relative_velocity(
+        v_row_b: Self,
+        v_row_c: Self,
+    ) -> Result<Self, ArithmeticError> {
         v_row_b.checked_sub(v_row_c)
     }
 }

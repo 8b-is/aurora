@@ -73,14 +73,14 @@ func TestMaintenancePublishesOnlyValidatedBranch(t *testing.T) {
 			text, _ := json.Marshal(p)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/api/tags" {
-					w.Write([]byte(`{"models":[{"name":"granite4.2:30b","size":123}]}`))
+					_, _ = w.Write([]byte(`{"models":[{"name":"granite4.2:30b","size":123}]}`))
 					return
 				}
-				json.NewEncoder(w).Encode(completion{Response: string(text), Done: true, EvalCount: 10, EvalDuration: 100})
+				_ = json.NewEncoder(w).Encode(completion{Response: string(text), Done: true, EvalCount: 10, EvalDuration: 100})
 			}))
 			defer server.Close()
 			jobDir := filepath.Join(dir, "job")
-			os.Mkdir(jobDir, 0700)
+			_ = os.Mkdir(jobDir, 0700)
 			j := job{cfg: maintenanceConfig{Root: dir, MemoryBinary: memory, Endpoint: server.URL, Model: "granite4.2:30b"}, repo: repository{Name: "aurora-fixture", Path: source, Base: "main"}, dir: jobDir, receipt: receipt{Repo: "aurora-fixture"}}
 			err := j.process(0)
 			if broken {
@@ -114,7 +114,7 @@ func TestMaintenancePublishesOnlyValidatedBranch(t *testing.T) {
 				writeTest(t, recovery, string(encoded)+"\n", 0600)
 				writeTest(t, memory, "#!/bin/sh\nif [ \"$2\" = recall ]; then cat '"+recovery+"'; else cat >/dev/null; echo 1; fi\n", 0700)
 				resumedDir := filepath.Join(dir, "resumed")
-				os.Mkdir(resumedDir, 0700)
+				_ = os.Mkdir(resumedDir, 0700)
 				resumed := job{cfg: j.cfg, repo: j.repo, dir: resumedDir, receipt: receipt{Repo: j.repo.Name}}
 				if e := resumed.process(0); e != nil {
 					t.Fatal(e)
