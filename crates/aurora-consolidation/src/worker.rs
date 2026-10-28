@@ -38,7 +38,10 @@ impl Default for DreamConfig {
         Self {
             idle_threshold: Duration::from_secs(300),
             min_salience: Rational::new(1, 10).expect("1/10 is a valid rational"),
-            chunk_size: 64,
+            // 1024 events is ~1 ms of work at the measured throughput, which
+            // keeps preemption observation inside the 5 ms contract while
+            // avoiding 16x the per-chunk sorting overhead of a 64-event chunk.
+            chunk_size: 1_024,
             max_rounds: 4_096,
             checkpoint: None,
         }

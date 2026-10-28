@@ -15,8 +15,15 @@ use aurora_core::Rational;
 use aurora_mem8::MemoryEvent;
 
 fn main() {
-    let events = 200_000u64;
-    let distinct = 512u64;
+    let env_u64 = |key: &str, default: u64| -> u64 {
+        std::env::var(key)
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default)
+    };
+    let events: u64 = env_u64("AURORA_BENCH_EVENTS", 200_000);
+    let distinct: u64 = env_u64("AURORA_BENCH_DISTINCT", 512);
+    let chunk_size: usize = env_u64("AURORA_BENCH_CHUNK", 64) as usize;
 
     let mut buffer = EpisodicBuffer::new();
     for id in 1..=events {
@@ -49,6 +56,7 @@ fn main() {
 
     let config = DreamConfig {
         idle_threshold: Duration::from_micros(0),
+        chunk_size,
         ..DreamConfig::default()
     };
     let mut worker = DreamWorker::new(config)
@@ -74,4 +82,13 @@ fn main() {
     println!("footprint after   {after_total} B  (-{saved:.1}%)");
     println!("per-event         {:.2} us", micros / events as f64);
     println!("report            {report:?}");
+    println!(
+        "json {{\"chunk\":{chunk_size},\"events\":{events},\"ms\":{:.1},\"ev_per_s\":{:.0},\"before\":{before_total},\"after\":{after_total},\"saved_pct\":{saved:.2},\"summaries\":{}}}",
+        elapsed.as_secs_f64() * 1e3,
+        events as f64 / elapsed.as_secs_f64(),
+        match &report {
+            aurora_consolidation::DreamReport::Consolidated { summaries, .. } => *summaries,
+            _ => 0usize,
+        }
+    );
 }
