@@ -83,6 +83,10 @@ block publication. Agent branches use `alexiai/aurora-*`; pushes never force-upd
 or target the default branch. GitHub transport is for Git/PR publication only;
 language-model requests remain local.
 
+When `/dev/shm/aurora-cache` is available and writable, the worker uses its Cargo
+and Go cache directories. If either directory is unavailable, that tool retains its
+inherited cache configuration rather than being pointed at an unusable directory.
+
 MEM|8 files and logs live under the configured root. The persisted cursor resumes
 rotation after restart. Started/validated/pushed/finished receipts expose interrupted
 work. A single OS lock prevents overlapping workers. Keep backups of this root.

@@ -28,6 +28,18 @@ func writeTest(t *testing.T, path, body string, mode os.FileMode) {
 	}
 }
 
+func TestWritableCache(t *testing.T) {
+	dir := t.TempDir()
+	if !writableCache(filepath.Join(dir, "cache")) {
+		t.Fatal("writable cache rejected")
+	}
+	blocked := filepath.Join(dir, "file")
+	writeTest(t, blocked, "not a directory", 0600)
+	if writableCache(filepath.Join(blocked, "cache")) {
+		t.Fatal("unusable cache accepted")
+	}
+}
+
 // Real local Git repositories and actual Go tests; only GitHub and inference are
 // substituted. Verify the default branch and the user's checkout are untouched.
 func TestMaintenancePublishesOnlyValidatedBranch(t *testing.T) {

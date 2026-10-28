@@ -107,6 +107,23 @@ func ratio(p, q uint64) string {
 	}
 	return fmt.Sprintf("%d/%d", p/a, q/a)
 }
+
+// A shared cache may exist but belong to a different worker user. Never point a
+// build at it unless this process can actually create a file there.
+func writableCache(path string) bool {
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return false
+	}
+	f, err := os.CreateTemp(path, ".aurora-write-check-")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	closeErr := f.Close()
+	removeErr := os.Remove(name)
+	return closeErr == nil && removeErr == nil
+}
+
 func (j *job) command(cwd string, seconds int, input string, name string, args ...string) (string, error) {
 	j.sequence++
 	prefix := filepath.Join(j.dir, fmt.Sprintf("%03d-%s", j.sequence, filepath.Base(name)))
@@ -138,9 +155,12 @@ func (j *job) command(cwd string, seconds int, input string, name string, args .
 	if st, e := os.Stat("/dev/shm"); e == nil && st.IsDir() {
 		shmCargo := "/dev/shm/aurora-cache/cargo-target"
 		shmGo := "/dev/shm/aurora-cache/go-build"
-		_ = os.MkdirAll(shmCargo, 0700)
-		_ = os.MkdirAll(shmGo, 0700)
-		env = append(env, "CARGO_TARGET_DIR="+shmCargo, "GOCACHE="+shmGo)
+		if writableCache(shmCargo) {
+			env = append(env, "CARGO_TARGET_DIR="+shmCargo)
+		}
+		if writableCache(shmGo) {
+			env = append(env, "GOCACHE="+shmGo)
+		}
 	}
 	cmd.Env = env
 	if err = cmd.Run(); err != nil {
