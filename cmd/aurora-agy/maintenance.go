@@ -180,8 +180,9 @@ func (j *job) command(cwd string, seconds int, input string, name string, args .
 	}
 	return string(b), nil
 }
-func (j *job) validate(tree string) error {
+func (j *job) validate(tree string, requireClippy bool) (bool, error) {
 	lanes := 0
+	clippyClean := true
 	check := func(cwd, name string, args ...string) error {
 		j.receipt.Attempted++
 		_, err := j.command(cwd, 300, "", name, args...)
@@ -195,10 +196,19 @@ func (j *job) validate(tree string) error {
 		if exists(filepath.Join(cwd, "Cargo.toml")) {
 			lanes++
 			if err := check(cwd, "cargo", "test", "--workspace", "--offline"); err != nil {
-				return err
+				return false, err
 			}
-			if err := check(cwd, "cargo", "clippy", "--workspace", "--all-targets", "--offline", "--", "-D", "warnings"); err != nil {
-				return err
+			if requireClippy {
+				if err := check(cwd, "cargo", "clippy", "--workspace", "--all-targets", "--offline", "--", "-D", "warnings"); err != nil {
+					return false, err
+				}
+			} else {
+				if _, err := j.command(cwd, 300, "", "cargo", "clippy", "--workspace", "--all-targets", "--offline", "--", "-D", "warnings"); err == nil {
+					j.receipt.Attempted++
+					j.receipt.Passed++
+				} else {
+					clippyClean = false
+				}
 			}
 		}
 	}
@@ -207,31 +217,31 @@ func (j *job) validate(tree string) error {
 		if exists(filepath.Join(cwd, "go.mod")) {
 			lanes++
 			if err := check(cwd, "go", "test", "./..."); err != nil {
-				return err
+				return false, err
 			}
 			if err := check(cwd, "go", "vet", "./..."); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 	if exists(filepath.Join(tree, "c/Makefile")) {
 		lanes++
 		if err := check(tree, "make", "-C", "c", "test"); err != nil {
-			return err
+			return false, err
 		}
 	}
 	for _, p := range []string{".", "swift", "Packages/QwaveKit"} {
 		if exists(filepath.Join(tree, p, "Package.swift")) {
 			lanes++
 			if err := check(tree, "swift", "test", "--package-path", p, "--disable-automatic-resolution"); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
 	if lanes == 0 {
-		return fmt.Errorf("no supported repository validation plan")
+		return false, fmt.Errorf("no supported repository validation plan")
 	}
-	return nil
+	return clippyClean, nil
 }
 func exists(p string) bool { s, e := os.Stat(p); return e == nil && !s.IsDir() }
 
@@ -247,15 +257,27 @@ type proposal struct {
 
 func unwrapModelJSON(text string) string {
 	text = strings.TrimSpace(text)
-	if strings.HasPrefix(text, "<think>") {
-		if end := strings.Index(text, "</think>"); end >= 0 {
-			text = strings.TrimSpace(text[end+len("</think>"):])
+	if end := strings.LastIndex(text, "</think>"); end >= 0 {
+		text = strings.TrimSpace(text[end+len("</think>"):])
+	}
+	if idx := strings.Index(text, "```json"); idx >= 0 {
+		rest := text[idx+len("```json"):]
+		if end := strings.Index(rest, "```"); end >= 0 {
+			return strings.TrimSpace(rest[:end])
 		}
 	}
-	if strings.HasPrefix(text, "```json\n") && strings.HasSuffix(text, "```") {
-		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "```json\n"), "```"))
-	} else if strings.HasPrefix(text, "```\n") && strings.HasSuffix(text, "```") {
-		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "```\n"), "```"))
+	if idx := strings.Index(text, "```"); idx >= 0 {
+		rest := text[idx+len("```"):]
+		if end := strings.Index(rest, "```"); end >= 0 {
+			return strings.TrimSpace(rest[:end])
+		}
+	}
+	if !strings.HasPrefix(text, "{") {
+		start := strings.Index(text, "{")
+		end := strings.LastIndex(text, "}")
+		if start >= 0 && end > start {
+			return strings.TrimSpace(text[start : end+1])
+		}
 	}
 	return text
 }
@@ -484,7 +506,8 @@ func (j *job) process(cursor uint64) error {
 		return nil
 	}
 	// Validate the baseline first: generated patches cannot hide existing failures.
-	if err = j.validate(tree); err != nil {
+	baselineClippyClean, err := j.validate(tree, false)
+	if err != nil {
 		return fmt.Errorf("baseline validation: %w", err)
 	}
 	baselineClean := scanTree(tree) == nil
@@ -566,7 +589,7 @@ func (j *job) process(cursor uint64) error {
 	if err != nil {
 		return err
 	}
-	if err = j.validate(tree); err != nil {
+	if _, err = j.validate(tree, baselineClippyClean); err != nil {
 		return fmt.Errorf("candidate validation: %w", err)
 	}
 	after, err := j.command(tree, 20, "", "git", "diff", "--binary")

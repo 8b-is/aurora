@@ -166,6 +166,10 @@ func TestProposalsCannotModifyTestsOrEscape(t *testing.T) {
 	if e != nil || !p.NoChange || p.Reason != "ok" {
 		t.Fatalf("failed to unwrap think block: %+v %v", p, e)
 	}
+	p2, e := parseProposal("Thinking without opening tag because template prefilled it.\n</think>\nTo maintain invariants:\n```json\n{\"no_change\":true,\"reason\":\"prefilled\"}\n```")
+	if e != nil || !p2.NoChange || p2.Reason != "prefilled" {
+		t.Fatalf("failed to unwrap prefilled think block: %+v %v", p2, e)
+	}
 }
 
 func TestTriageNextAndPruneJobDirs(t *testing.T) {
