@@ -115,7 +115,7 @@ func (c *localClient) complete(ctx context.Context, model, prompt string) (compl
 		return result, fmt.Errorf("model %q must have locally installed weights; no downloads or cloud fallback", model)
 	}
 	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 8192, "num_predict": 1600, "temperature": 0, "seed": 432}}
-	if strings.Contains(prompt, "Return only JSON") {
+	if strings.Contains(prompt, "Return only JSON") || strings.Contains(prompt, "Return ONLY valid JSON") {
 		body["format"] = "json"
 	}
 	if err = c.request(ctx, "/api/generate", body, &result); err != nil {
