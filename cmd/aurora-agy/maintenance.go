@@ -260,24 +260,28 @@ func unwrapModelJSON(text string) string {
 	if end := strings.LastIndex(text, "</think>"); end >= 0 {
 		text = strings.TrimSpace(text[end+len("</think>"):])
 	}
-	if idx := strings.Index(text, "```json"); idx >= 0 {
+	if strings.HasPrefix(text, "{") {
+		return text
+	}
+	if idx := strings.LastIndex(text, "```json"); idx >= 0 {
 		rest := text[idx+len("```json"):]
 		if end := strings.Index(rest, "```"); end >= 0 {
 			return strings.TrimSpace(rest[:end])
 		}
 	}
-	if idx := strings.Index(text, "```"); idx >= 0 {
-		rest := text[idx+len("```"):]
-		if end := strings.Index(rest, "```"); end >= 0 {
-			return strings.TrimSpace(rest[:end])
+	best := ""
+	for i := 0; i < len(text); i++ {
+		if text[i] != '{' {
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(text[i:]))
+		var obj map[string]any
+		if err := dec.Decode(&obj); err == nil && len(obj) > 0 {
+			best = strings.TrimSpace(text[i : i+int(dec.InputOffset())])
 		}
 	}
-	if !strings.HasPrefix(text, "{") {
-		start := strings.Index(text, "{")
-		end := strings.LastIndex(text, "}")
-		if start >= 0 && end > start {
-			return strings.TrimSpace(text[start : end+1])
-		}
+	if best != "" {
+		return best
 	}
 	return text
 }
@@ -554,6 +558,7 @@ func (j *job) process(cursor uint64) error {
 	}
 	j.receipt.Tokens = response.EvalCount
 	j.receipt.EvalNS = response.EvalDuration
+	_ = os.WriteFile(filepath.Join(j.dir, "model-response.txt"), []byte(response.Response), 0600)
 	p, err := parseProposal(response.Response)
 	if err != nil {
 		return fmt.Errorf("model proposal: %w", err)

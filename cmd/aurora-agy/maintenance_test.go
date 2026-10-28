@@ -166,9 +166,13 @@ func TestProposalsCannotModifyTestsOrEscape(t *testing.T) {
 	if e != nil || !p.NoChange || p.Reason != "ok" {
 		t.Fatalf("failed to unwrap think block: %+v %v", p, e)
 	}
-	p2, e := parseProposal("Thinking without opening tag because template prefilled it.\n</think>\nTo maintain invariants:\n```json\n{\"no_change\":true,\"reason\":\"prefilled\"}\n```")
+	p2, e := parseProposal("Thinking without opening tag because template prefilled it.\n</think>\nTo maintain invariants:\n```rust\nfn demo() {}\n```\n```json\n{\"no_change\":true,\"reason\":\"prefilled\"}\n```")
 	if e != nil || !p2.NoChange || p2.Reason != "prefilled" {
 		t.Fatalf("failed to unwrap prefilled think block: %+v %v", p2, e)
+	}
+	p3, e := parseProposal("Analysis:\n```rust\nconst PHI_NUM: i64 = 1618034;\n```\nResult:\n```\n{\"no_change\":true,\"reason\":\"after_rust_fence\"}\n```")
+	if e != nil || !p3.NoChange || p3.Reason != "after_rust_fence" {
+		t.Fatalf("failed to unwrap proposal after rust fence: %+v %v", p3, e)
 	}
 }
 
