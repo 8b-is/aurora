@@ -191,9 +191,12 @@ func triageNextFromConfig(cfg maintenanceConfig, queuePath string) error {
 
 	head, snapshot := collectRepoSnapshot(chosen.Source)
 	prompt := "Review StandardGalactic repository " + chosen.Name + " (" + chosen.Source + ", commit " + head + ") for the 8b-is family.\n" +
-		"Classify its value for 8b-is using exact integer or p/q rational discipline. " +
+		"STRICT RUST-FIRST TRIAGE POLICY:\n" +
+		"- Choose \"adapt\" ONLY if the repository is written in Rust (Cargo.toml) OR contains a compact mathematical, compression, kernel, or DSP algorithm that should be ported directly into a Rust crate in 8b-is (next_action MUST start with \"Rust:\" and name the target Rust crate/port).\n" +
+		"- Choose \"reference\" for papers, notes, or non-Rust research code (Python, MATLAB, TeX, C++) kept only as mathematical reference.\n" +
+		"- Choose \"defer\" or \"reject\" for unrelated third-party forks (Java/Eclipse, Ruby wrappers, generic web templates, MATLAB figure scripts).\n" +
 		"Return ONLY valid JSON with exact keys: " +
-		"{\"decision\":\"adapt|reference|defer|reject\",\"destination\":\"/data/8b-is/<repo>\",\"license\":\"detected SPDX or unknown\",\"mechanism\":\"1-2 sentence concrete mechanism summary\",\"next_action\":\"1 sentence bounded next action\"}.\n\n" +
+		"{\"decision\":\"adapt|reference|defer|reject\",\"destination\":\"/data/8b-is/<repo>\",\"license\":\"detected SPDX or unknown\",\"mechanism\":\"1-2 sentence concrete mechanism summary\",\"next_action\":\"1 sentence bounded next action (prefix with Rust: when adapting)\"}.\n\n" +
 		snapshot
 	if len(prompt) > 24000 {
 		prompt = prompt[:24000]

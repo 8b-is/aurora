@@ -119,7 +119,8 @@ func scanSource(path, text string) error {
 				i++
 			}
 			lit := string(b[start:i])
-			floating := !hex && strings.ContainsAny(lit, "eE") || strings.HasSuffix(lit, "f32") || strings.HasSuffix(lit, "f64")
+			litCore := strings.TrimSuffix(strings.TrimSuffix(lit, "usize"), "isize")
+			floating := !hex && strings.ContainsAny(litCore, "eE") || strings.HasSuffix(lit, "f32") || strings.HasSuffix(lit, "f64")
 			if i < len(b) && b[i] == '.' && (i+1 == len(b) || b[i+1] != '.' && (b[i+1] >= '0' && b[i+1] <= '9' || !unicode.IsLetter(rune(b[i+1])) && b[i+1] != '_')) {
 				floating = true
 			}
@@ -175,4 +176,136 @@ func scanTree(tree string) error {
 		}
 		return scanSource(path, text)
 	})
+}
+
+func byteLine(text string, offset int) int {
+	if offset > len(text) {
+		offset = len(text)
+	}
+	return strings.Count(text[:offset], "\n") + 1
+}
+
+func describeFloatViolations(path, text string) string {
+	lines := strings.Split(text, "\n")
+	var badLines []int
+	seen := map[int]bool{}
+	addLine := func(ln int) {
+		if ln >= 1 && ln <= len(lines) && !seen[ln] {
+			seen[ln] = true
+			badLines = append(badLines, ln)
+		}
+	}
+	if filepath.Ext(path) == ".go" {
+		var s scanner.Scanner
+		fset := token.NewFileSet()
+		f := fset.AddFile(path, -1, len(text))
+		s.Init(f, []byte(text), nil, 0)
+		for {
+			pos, tok, lit := s.Scan()
+			if tok == token.EOF {
+				break
+			}
+			if tok == token.FLOAT || tok == token.IMAG || tok == token.IDENT && floatType(lit) {
+				addLine(fset.Position(pos).Line)
+			}
+		}
+	} else {
+		b := []byte(text)
+		for i := 0; i < len(b); {
+			if strings.HasPrefix(string(b[i:]), "//") {
+				for i < len(b) && b[i] != '\n' {
+					i++
+				}
+				continue
+			}
+			if strings.HasPrefix(string(b[i:]), "/*") {
+				depth := 1
+				i += 2
+				for i < len(b) && depth > 0 {
+					if strings.HasPrefix(string(b[i:]), "/*") {
+						depth++
+						i += 2
+					} else if strings.HasPrefix(string(b[i:]), "*/") {
+						depth--
+						i += 2
+					} else {
+						i++
+					}
+				}
+				continue
+			}
+			if b[i] == 'r' {
+				j := i + 1
+				for j < len(b) && b[j] == '#' {
+					j++
+				}
+				if j < len(b) && b[j] == '"' {
+					end := "\"" + strings.Repeat("#", j-i-1)
+					n := strings.Index(string(b[j+1:]), end)
+					if n >= 0 {
+						i = j + 1 + n + len(end)
+						continue
+					}
+				}
+			}
+			quoted := b[i] == '"' || b[i] == '`' || b[i] == '\'' && (filepath.Ext(path) == ".js" || i+2 < len(b) && b[i+2] == '\'' || i+3 < len(b) && b[i+1] == '\\' && b[i+3] == '\'')
+			if quoted {
+				q := b[i]
+				i++
+				for i < len(b) {
+					if b[i] == '\\' {
+						i += 2
+					} else if b[i] == q {
+						i++
+						break
+					} else {
+						i++
+					}
+				}
+				continue
+			}
+			if unicode.IsLetter(rune(b[i])) || b[i] == '_' {
+				start := i
+				for i < len(b) && (unicode.IsLetter(rune(b[i])) || b[i] >= '0' && b[i] <= '9' || b[i] == '_') {
+					i++
+				}
+				if floatType(string(b[start:i])) {
+					addLine(byteLine(text, start))
+				}
+				continue
+			}
+			if b[i] >= '0' && b[i] <= '9' {
+				start := i
+				hex := strings.HasPrefix(string(b[i:]), "0x") || strings.HasPrefix(string(b[i:]), "0X")
+				i++
+				for i < len(b) && (unicode.IsLetter(rune(b[i])) || b[i] >= '0' && b[i] <= '9' || b[i] == '_') {
+					i++
+				}
+				lit := string(b[start:i])
+				litCore := strings.TrimSuffix(strings.TrimSuffix(lit, "usize"), "isize")
+				floating := !hex && strings.ContainsAny(litCore, "eE") || strings.HasSuffix(lit, "f32") || strings.HasSuffix(lit, "f64")
+				if i < len(b) && b[i] == '.' && (i+1 == len(b) || b[i+1] != '.' && (b[i+1] >= '0' && b[i+1] <= '9' || !unicode.IsLetter(rune(b[i+1])) && b[i+1] != '_')) {
+					floating = true
+				}
+				if floating {
+					addLine(byteLine(text, start))
+				}
+				continue
+			}
+			i++
+		}
+	}
+	if len(badLines) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Offending line(s) in %s (your {\"old\": ..., \"new\": ...} replacement MUST cover line %d through line %d so 0 float tokens remain):\n", path, badLines[0], badLines[len(badLines)-1]))
+	limit := len(badLines)
+	if limit > 16 {
+		limit = 16
+	}
+	for _, ln := range badLines[:limit] {
+		sb.WriteString(fmt.Sprintf("  line %d: %s\n", ln, lines[ln-1]))
+	}
+	return sb.String()
 }
