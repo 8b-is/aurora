@@ -70,12 +70,23 @@ impl StateGraph {
     ///
     /// Returns `(merged, pruned)`.
     pub fn prune(&mut self) -> (usize, usize) {
-        self.prune_with(&|| false).unwrap_or((0, 0))
+        self.prune_with_anchors(&[], &|| false).unwrap_or((0, 0))
     }
 
-    /// Interruptible prune. `abort` is polled between phases; when it returns
-    /// true the method returns `None` and the live graph is untouched.
+    /// Interruptible prune with no anchors.
     pub fn prune_with(&mut self, abort: &dyn Fn() -> bool) -> Option<(usize, usize)> {
+        self.prune_with_anchors(&[], abort)
+    }
+
+    /// Interruptible prune. `anchors` are ids that must survive even when they
+    /// carry no edge (a merged anchor survives under its canonical id).
+    /// `abort` is polled between phases; when it fires the method returns
+    /// `None` and the live graph is untouched.
+    pub fn prune_with_anchors(
+        &mut self,
+        anchors: &[u64],
+        abort: &dyn Fn() -> bool,
+    ) -> Option<(usize, usize)> {
         let mut nodes = self.nodes.clone();
         let mut edges = self.edges.clone();
 
@@ -146,24 +157,30 @@ impl StateGraph {
             }
         }
 
-        // 4. Prune orphans: nodes with neither an outgoing nor an incoming edge.
+        // 4. Keep referenced nodes and anchored nodes; prune the rest.
         if abort() {
             return None;
         }
-        let mut referenced = vec![false; canonical.len()];
+        let anchor_ids: Vec<u64> = anchors.iter().map(|id| resolve(*id)).collect();
+        let mut retained = vec![false; canonical.len()];
         let index_of = |id: u64| canonical.iter().position(|n| n.id == id);
         for edge in &merged_edges {
             if let Some(i) = index_of(edge.from) {
-                referenced[i] = true;
+                retained[i] = true;
             }
             if let Some(i) = index_of(edge.to) {
-                referenced[i] = true;
+                retained[i] = true;
+            }
+        }
+        for (i, node) in canonical.iter().enumerate() {
+            if anchor_ids.contains(&node.id) {
+                retained[i] = true;
             }
         }
         let mut pruned = 0usize;
         let mut survivors: Vec<SemanticNode> = Vec::with_capacity(canonical.len());
         for (i, node) in canonical.into_iter().enumerate() {
-            if referenced[i] {
+            if retained[i] {
                 survivors.push(node);
             } else {
                 pruned += 1;

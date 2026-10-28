@@ -33,4 +33,6 @@ pub use state::{IdleClock, Phase, PreemptFlag, monotonic_us};
 pub use worker::{DreamConfig, DreamReport, DreamWorker};
 
 #[cfg(test)]
+mod props;
+#[cfg(test)]
 mod tests;

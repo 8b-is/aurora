@@ -195,7 +195,7 @@ impl DreamWorker {
 
         let pruned = {
             let flag = &self.preempt;
-            graph.prune_with(&|| flag.is_set())
+            graph.prune_with_anchors(&[ROOT_ID], &|| flag.is_set())
         };
         let Some((merged, pruned)) = pruned else {
             self.preempt.take();
