@@ -174,6 +174,10 @@ func TestProposalsCannotModifyTestsOrEscape(t *testing.T) {
 	if e != nil || !p3.NoChange || p3.Reason != "after_rust_fence" {
 		t.Fatalf("failed to unwrap proposal after rust fence: %+v %v", p3, e)
 	}
+	p4, e := parseProposal("<think>\nthinking\n</think>\n{\"no_change\":true,\"reason\":\"first\"}\n{\"no_change\":true,\"reason\":\"repeated\"}")
+	if e != nil || !p4.NoChange || p4.Reason != "first" {
+		t.Fatalf("failed to unwrap first proposal after think block: %+v %v", p4, e)
+	}
 }
 
 func TestTriageNextAndPruneJobDirs(t *testing.T) {

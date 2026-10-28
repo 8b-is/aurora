@@ -257,11 +257,11 @@ type proposal struct {
 
 func unwrapModelJSON(text string) string {
 	text = strings.TrimSpace(text)
-	if end := strings.LastIndex(text, "</think>"); end >= 0 {
-		text = strings.TrimSpace(text[end+len("</think>"):])
-	}
 	if strings.HasPrefix(text, "{") {
 		return text
+	}
+	if end := strings.LastIndex(text, "</think>"); end >= 0 {
+		text = strings.TrimSpace(text[end+len("</think>"):])
 	}
 	if idx := strings.LastIndex(text, "```json"); idx >= 0 {
 		rest := text[idx+len("```json"):]
@@ -269,19 +269,15 @@ func unwrapModelJSON(text string) string {
 			return strings.TrimSpace(rest[:end])
 		}
 	}
-	best := ""
 	for i := 0; i < len(text); i++ {
 		if text[i] != '{' {
 			continue
 		}
 		dec := json.NewDecoder(strings.NewReader(text[i:]))
 		var obj map[string]any
-		if err := dec.Decode(&obj); err == nil && len(obj) > 0 {
-			best = strings.TrimSpace(text[i : i+int(dec.InputOffset())])
+		if err := dec.Decode(&obj); err == nil && (obj["no_change"] != nil || obj["path"] != nil || obj["decision"] != nil) {
+			return strings.TrimSpace(text[i : i+int(dec.InputOffset())])
 		}
-	}
-	if best != "" {
-		return best
 	}
 	return text
 }
@@ -525,7 +521,7 @@ func (j *job) process(cursor uint64) error {
 	if len(floatCandidates) > 0 {
 		chosen = floatCandidates[cursor%uint64(len(floatCandidates))]
 	}
-	floatHint := ""
+	floatHint := "\nNumeric guard status for this file: CLEAN (0 floating-point tokens). Ignore prior MEM8 receipts about already-fixed float errors; unless you find a concrete non-test logic bug, return {\"no_change\":true,\"reason\":\"...\"}."
 	if ferr := scanSource(chosen, allowed[chosen]); ferr != nil {
 		floatHint = "\nActive numeric guard violation in this file that MUST be eliminated using integer or p/q arithmetic: " + ferr.Error()
 	}
