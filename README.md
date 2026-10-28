@@ -7,8 +7,10 @@ Rust memory and arithmetic; Go agent coordination; locally installed models.
 
 ## Working capabilities
 
-- Checked, reduced `p/q` arithmetic and explicit integer-scaled wave state.
+- Checked, reduced `p/q` arithmetic (`aurora-core::rational`, including exact rational solvers for Zeno's four motion paradoxes) and explicit integer-scaled wave state.
+- `8b-is/wupz` C ABI v1 compatible 32-byte `WaveMemoryTuple::to_wupz_bytes` serialization, 4-way unrolled `wupz_xor_fold` and `wupz_popcount`, 64-bit SWAR `wupz_byte_diff`, `0x62`-gated 32-byte frame sealing (`seal_wupz_frame_32b`), and `BFP-64` bitplane fold packing (`pack_fold_bfp64` / `unpack_fold_bfp64` at `qt:55`).
 - Versioned, checksum-verified MEM|8 wave history and semantic task receipts.
+- Integer EWMA dynamics in `aurora-phoenix` and priority-driven fault recovery (`hamilton_executive_recovery` for `1201`/`1202` executive load shedding) in `aurora-dyad`.
 - Loopback-only Ollama inference, defaulting to local `granite4.2:30b`.
 - A serial maintenance worker: isolated clone → baseline tests → remembered context
   → bounded model proposal → no-float check → repository tests → agent branch → PR.
@@ -48,6 +50,7 @@ arithmetic uses BigInt, converting integer coordinates at the rendering boundary
 
 ```sh
 aurora-agy status
+aurora-agy cortex
 aurora-agy chat 'Explain a checked p/q addition in one sentence.'
 aurora-agy hop +-+
 printf '%s' '{"repo":"aurora","status":"tests_passed"}' | aurora memory append /var/lib/aurora/example.m8 1 1
