@@ -114,7 +114,7 @@ func (c *localClient) complete(ctx context.Context, model, prompt string) (compl
 	if !found {
 		return result, fmt.Errorf("model %q must have locally installed weights; no downloads or cloud fallback", model)
 	}
-	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 8192, "num_predict": 2048, "temperature": 0, "seed": 432}}
+	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 8192, "num_predict": 4096, "temperature": 0, "seed": 432}}
 	if err = c.request(ctx, "/api/generate", body, &result); err != nil {
 		return result, err
 	}

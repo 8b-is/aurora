@@ -9,9 +9,9 @@ Rust memory and arithmetic; Go agent coordination; locally installed models.
 
 - Checked, reduced `p/q` arithmetic and explicit integer-scaled wave state.
 - Versioned, checksum-verified MEM|8 wave history and semantic task receipts.
-- Loopback-only Ollama inference, defaulting to local `granite4.2:30b`.
-- A serial maintenance worker: isolated clone → baseline tests → remembered context
-  → bounded model proposal → no-float check → repository tests → agent branch → PR.
+- Loopback-only Ollama inference, defaulting to local `aye-deepseek:32b` (augmented 8b-is DeepSeek-R1-32B + Engram p/q substrate) and supporting `granite4.2:30b`.
+- A serial maintenance & StandardGalactic triage worker: isolated clone → baseline tests → remembered context
+  → bounded model proposal → no-float check → repository tests → agent branch → PR, plus `aurora-agy triage` for the StandardGalactic research queue.
 - Exact-match edits to existing Rust/Go source. Existing test modules, test files,
   build configuration, Git commands, and publishing destinations are not model-controlled.
 - Honest outcomes: no-change, dirty checkout, blocked validation, validated commit,

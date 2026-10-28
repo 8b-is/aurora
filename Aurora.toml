@@ -40,7 +40,7 @@ attenuation_budget_ns = 117_000_000 # strict <117 ms
 quantization = "BitNet b1.58 {-1, 0, +1}"
 packing = "five trits per byte; measure actual payload sizes"
 endpoint = "http://127.0.0.1:11434"
-model = "granite4.2:30b"
+model = "aye-deepseek:32b"
 context_tokens = 8192
 remote_models = false
 

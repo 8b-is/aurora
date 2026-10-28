@@ -162,4 +162,55 @@ func TestProposalsCannotModifyTestsOrEscape(t *testing.T) {
 	if _, e := parseProposal(`{"no_change":true} {}`); e == nil {
 		t.Fatal("trailing JSON accepted")
 	}
+	p, e := parseProposal("<think>\nreasoning\n</think>\n```json\n{\"no_change\":true,\"reason\":\"ok\"}\n```")
+	if e != nil || !p.NoChange || p.Reason != "ok" {
+		t.Fatalf("failed to unwrap think block: %+v %v", p, e)
+	}
+}
+
+func TestTriageNextAndPruneJobDirs(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 4; i++ {
+		sub, err := os.MkdirTemp(dir, "job-demo-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = sub
+	}
+	pruneJobDirs(dir, "job-demo-", 2)
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 pruned job dirs, got %d", len(entries))
+	}
+
+	repoDir := filepath.Join(dir, "sg-demo")
+	if err := os.MkdirAll(repoDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeTest(t, filepath.Join(repoDir, "README.md"), "# SG Demo\nInteger state transitions.\n", 0600)
+	queuePath := filepath.Join(dir, "queue.jsonl")
+	writeTest(t, queuePath, `{"name":"sg-demo","source":"`+repoDir+`","shard":1,"status":"needs_source_review"}`+"\n", 0600)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tags" {
+			_, _ = w.Write([]byte(`{"models":[{"name":"aye-deepseek:32b","size":123}]}`))
+			return
+		}
+		resp := "<think>\nchecking\n</think>\n{\"decision\":\"reference\",\"destination\":\"/data/8b-is/sphered\",\"license\":\"MIT\",\"mechanism\":\"Integer state transitions with explicit guards.\",\"next_action\":\"Write a bounded sphered design note.\"}"
+		_ = json.NewEncoder(w).Encode(completion{Response: resp, Done: true, EvalCount: 42, EvalDuration: 1000})
+	}))
+	defer server.Close()
+
+	cfg := maintenanceConfig{
+		Root:     dir,
+		Endpoint: server.URL,
+		Model:    "aye-deepseek:32b",
+	}
+	if err := triageNextFromConfig(cfg, queuePath); err != nil {
+		t.Fatal(err)
+	}
+	done := loadCompletedTriageSet(filepath.Join(dir, "triage-reviews.jsonl"))
+	if !done["sg-demo"] {
+		t.Fatal("expected sg-demo to be recorded in triage-reviews.jsonl")
+	}
 }

@@ -245,12 +245,24 @@ type proposal struct {
 	NoChange bool   `json:"no_change"`
 }
 
+func unwrapModelJSON(text string) string {
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "<think>") {
+		if end := strings.Index(text, "</think>"); end >= 0 {
+			text = strings.TrimSpace(text[end+len("</think>"):])
+		}
+	}
+	if strings.HasPrefix(text, "```json\n") && strings.HasSuffix(text, "```") {
+		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "```json\n"), "```"))
+	} else if strings.HasPrefix(text, "```\n") && strings.HasSuffix(text, "```") {
+		text = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "```\n"), "```"))
+	}
+	return text
+}
+
 func parseProposal(text string) (proposal, error) {
 	var p proposal
-	text = strings.TrimSpace(text)
-	if strings.HasPrefix(text, "```json\n") && strings.HasSuffix(text, "```") {
-		text = strings.TrimSuffix(strings.TrimPrefix(text, "```json\n"), "```")
-	}
+	text = unwrapModelJSON(text)
 	d := json.NewDecoder(strings.NewReader(text))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&p); err != nil {
@@ -658,6 +670,10 @@ func maintenanceLoop(configPath string, once bool) error {
 		j.receipt.DurationMS = time.Since(start).Milliseconds()
 		if err = j.record(); err != nil {
 			return err
+		}
+		pruneJobDirs(cfg.Root, "job-"+repo.Name+"-", 16)
+		if cfg.Root == "/var/lib/aurora" && exists(defaultTriageQueuePath) {
+			_ = triageNextFromConfig(cfg, defaultTriageQueuePath)
 		}
 		cursor++
 		if err = atomicCursor(cursorPath, cursor); err != nil {

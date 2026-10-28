@@ -28,7 +28,7 @@ func run(args []string) error {
 		}
 		fmt.Println("source numeric guard passed")
 	case "help", "--help", "-h":
-		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | cortex | omnifold | audit PATH | maintain CONFIG [--once]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
+		fmt.Println("aurora-agy status | chat PROMPT | hop +-+ | cortex | omnifold | audit PATH | maintain CONFIG [--once] | triage [QUEUE_JSONL]\nAll inference uses literal loopback addresses. Maintenance creates agent branches and PRs.")
 	case "cortex":
 		fmt.Println("via agy cortex: subagents=[codewhale,entheai] continuation=google/gemini-4-argon quant=mlx-quant-b158 overflow={<3,<3,<3}+1")
 	case "omnifold":
@@ -51,7 +51,7 @@ func run(args []string) error {
 		}
 		model := os.Getenv("AURORA_MODEL")
 		if model == "" {
-			model = "granite4.2:30b"
+			model = "aye-deepseek:32b"
 		}
 		client, err := newLocalClient(endpoint)
 		if err != nil {
@@ -81,6 +81,12 @@ func run(args []string) error {
 			return fmt.Errorf("maintain requires a configuration path")
 		}
 		return maintenanceLoop(args[1], len(args) == 3 && args[2] == "--once")
+	case "triage":
+		queuePath := defaultTriageQueuePath
+		if len(args) >= 2 {
+			queuePath = args[1]
+		}
+		return runTriageCLI(queuePath)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
