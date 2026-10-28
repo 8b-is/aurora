@@ -254,6 +254,7 @@ type proposal struct {
 	New      string `json:"new"`
 	Reason   string `json:"reason"`
 	NoChange bool   `json:"no_change"`
+	Error    string `json:"error"`
 }
 
 func unwrapModelJSON(text string) string {
@@ -290,6 +291,10 @@ func parseProposal(text string) (proposal, error) {
 	d.DisallowUnknownFields()
 	if err := d.Decode(&p); err != nil {
 		return p, err
+	}
+	if p.Error != "" && p.Path == "" {
+		p.NoChange = true
+		p.Reason = p.Error
 	}
 	var extra any
 	if err := d.Decode(&extra); err != io.EOF {
@@ -685,7 +690,16 @@ func (j *job) process(cursor uint64) error {
 	if err != nil {
 		return err
 	}
-	if err = scanSource(p.Path, string(updatedBytes)); err != nil {
+	if err = scanSource(p.Path, p.New); err != nil {
+		return err
+	}
+	beforeFloats := countFloatViolations(p.Path, allowed[p.Path])
+	afterFloats := countFloatViolations(p.Path, string(updatedBytes))
+	if beforeFloats > 0 {
+		if afterFloats >= beforeFloats {
+			return scanSource(p.Path, string(updatedBytes))
+		}
+	} else if err = scanSource(p.Path, string(updatedBytes)); err != nil {
 		return err
 	}
 	if baselineClean {

@@ -185,7 +185,7 @@ func byteLine(text string, offset int) int {
 	return strings.Count(text[:offset], "\n") + 1
 }
 
-func describeFloatViolations(path, text string) string {
+func collectFloatViolationLines(path, text string) []int {
 	lines := strings.Split(text, "\n")
 	var badLines []int
 	seen := map[int]bool{}
@@ -295,16 +295,31 @@ func describeFloatViolations(path, text string) string {
 			i++
 		}
 	}
+	return badLines
+}
+
+func countFloatViolations(path, text string) int {
+	return len(collectFloatViolationLines(path, text))
+}
+
+func describeFloatViolations(path, text string) string {
+	lines := strings.Split(text, "\n")
+	badLines := collectFloatViolationLines(path, text)
 	if len(badLines) == 0 {
 		return ""
 	}
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Offending line(s) in %s (your {\"old\": ..., \"new\": ...} replacement MUST cover line %d through line %d so 0 float tokens remain):\n", path, badLines[0], badLines[len(badLines)-1]))
-	limit := len(badLines)
-	if limit > 16 {
-		limit = 16
+	// Focus on the first contiguous function/cluster (within 35 lines of the first violation)
+	// so large files can be fixed function-by-function without exceeding token limits.
+	first := badLines[0]
+	var cluster []int
+	for _, ln := range badLines {
+		if ln-first <= 35 {
+			cluster = append(cluster, ln)
+		}
 	}
-	for _, ln := range badLines[:limit] {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Target offending line(s) to fix in %s (total offending lines in file: %d; replace the function containing line %d..%d with 0 float tokens in \"new\"):\n", path, len(badLines), cluster[0], cluster[len(cluster)-1]))
+	for _, ln := range cluster {
 		sb.WriteString(fmt.Sprintf("  line %d: %s\n", ln, lines[ln-1]))
 	}
 	return sb.String()
