@@ -8,15 +8,31 @@
 use aurora_core::Rational;
 use aurora_mem8::MemoryEvent;
 
+/// Provenance kept per summary. Beyond this many source ids only the count is
+/// retained, so a summary's footprint is bounded no matter how many rows it
+/// distils.
+pub const MAX_PROVENANCE: usize = 64;
+
 /// A distilled semantic record. `source_ids` preserves provenance so the
-/// original episodic rows can be found in the archive if the summary is ever
-/// questioned.
+/// original episodic rows can be found in the archive, capped at
+/// [`MAX_PROVENANCE`]; `source_count` keeps the true total.
+///
+/// `bytes` is the footprint of the record itself (hash, provenance, count), not
+/// the size of the source text it stands in for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SummaryRecord {
     pub hash: u64,
     pub salience: Rational,
     pub source_ids: Vec<u64>,
+    pub source_count: u64,
     pub bytes: usize,
+}
+
+impl SummaryRecord {
+    /// Footprint of the record: 32-byte hash, 8-byte count, 8 bytes per retained id.
+    fn footprint(&self) -> usize {
+        32 + 8 + self.source_ids.len() * 8
+    }
 }
 
 /// Append-only episodic buffer.
@@ -85,20 +101,30 @@ impl EpisodicBuffer {
             let hash = fnv1a(event.payload.as_bytes());
             match summaries.last_mut() {
                 Some(summary) if summary.hash == hash => {
-                    summary.source_ids.push(event.id);
-                    summary.bytes = summary.bytes.saturating_add(event.payload.len());
+                    if summary.source_ids.len() < MAX_PROVENANCE {
+                        summary.source_ids.push(event.id);
+                    }
+                    summary.source_count = summary.source_count.saturating_add(1);
+                    summary.bytes = summary.footprint();
                     // Conservative salience: a merged record is only as salient
                     // as its weakest contributor.
                     if event.salience < summary.salience {
                         summary.salience = event.salience;
                     }
                 }
-                _ => summaries.push(SummaryRecord {
-                    hash,
-                    salience: event.salience,
-                    source_ids: vec![event.id],
-                    bytes: event.payload.len(),
-                }),
+                _ => {
+                    let record = SummaryRecord {
+                        hash,
+                        salience: event.salience,
+                        source_ids: vec![event.id],
+                        source_count: 1,
+                        bytes: 0,
+                    };
+                    summaries.push(SummaryRecord {
+                        bytes: record.footprint(),
+                        ..record
+                    });
+                }
             }
         }
 

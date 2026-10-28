@@ -411,3 +411,10 @@ fn idle_clock_accounts_microseconds() {
     assert!(clock.is_idle(1_000 + 300_000_000));
     assert_eq!(clock.idle_for_us(1_000 + 300_000_000), 300_000_000);
 }
+
+#[test]
+fn fnv_vector_matches_zig_cross_verifier() {
+    // Pinned identically in zig/verify_consolidation.zig. If either side drifts,
+    // summaries are no longer portable between the Rust and Zig implementations.
+    assert_eq!(fnv1a(b"episode-0"), 0xd9f3_618d_c2d7_5aa7);
+}

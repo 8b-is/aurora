@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use aurora_core::Rational;
 
 use crate::admissibility::{Snapshot, Violation, admit, checkpoint_atomic};
-use crate::episodic::EpisodicBuffer;
+use crate::episodic::{EpisodicBuffer, SummaryRecord};
 use crate::graph::{SemanticEdge, SemanticNode, StateGraph};
 use crate::state::{IdleClock, Phase, PreemptFlag, monotonic_us};
 
@@ -153,6 +153,7 @@ impl DreamWorker {
         let mut summaries_total = 0usize;
         let mut purged_total = 0usize;
         let mut rounds = 0u32;
+        let mut collected: Vec<SummaryRecord> = Vec::new();
 
         loop {
             if rounds >= self.config.max_rounds || buffer.is_empty() {
@@ -166,27 +167,56 @@ impl DreamWorker {
             let mut part = EpisodicBuffer::from_events(chunk);
             let (summaries, purged) = part.compact(self.config.min_salience);
             purged_total = purged_total.saturating_add(purged);
-            for summary in summaries {
-                summaries_total = summaries_total.saturating_add(1);
-                let weight_ppm = u64::try_from(summary.salience.scaled(1_000_000).unwrap_or(0))
-                    .unwrap_or(0)
-                    .min(1_000_000);
-                let id = summary.source_ids.first().copied().unwrap_or(1).max(1);
-                graph.add_node(SemanticNode {
-                    id,
-                    hash: summary.hash,
-                    weight_ppm,
-                    bytes: summary.bytes,
-                });
-                ensure_root(&mut graph);
-                graph.add_edge(SemanticEdge {
-                    from: ROOT_ID,
-                    to: id,
-                    weight_ppm,
-                });
-            }
+            summaries_total = summaries_total.saturating_add(summaries.len());
+            collected.extend(summaries);
             rounds = rounds.saturating_add(1);
         }
+
+        // Chunking buys preemption granularity, but duplicates that straddle a
+        // chunk boundary would otherwise become separate nodes. Fold them
+        // globally before the graph is touched.
+        if self.preempt.take() {
+            self.phase = Phase::Active;
+            return DreamReport::Preempted { rounds };
+        }
+        collected.sort_by_key(|s| (s.hash, s.source_ids.first().copied().unwrap_or(1)));
+        let mut deduped: Vec<SummaryRecord> = Vec::with_capacity(collected.len());
+        for summary in collected {
+            match deduped.last_mut() {
+                Some(head) if head.hash == summary.hash => {
+                    let room =
+                        crate::episodic::MAX_PROVENANCE.saturating_sub(head.source_ids.len());
+                    head.source_ids
+                        .extend(summary.source_ids.into_iter().take(room));
+                    head.source_count = head.source_count.saturating_add(summary.source_count);
+                    head.bytes = 32 + 8 + head.source_ids.len() * 8;
+                    if summary.salience < head.salience {
+                        head.salience = summary.salience;
+                    }
+                }
+                _ => deduped.push(summary),
+            }
+        }
+
+        ensure_root(&mut graph);
+        for summary in &deduped {
+            let weight_ppm = u64::try_from(summary.salience.scaled(1_000_000).unwrap_or(0))
+                .unwrap_or(0)
+                .min(1_000_000);
+            let id = summary.source_ids.first().copied().unwrap_or(1).max(1);
+            graph.add_node(SemanticNode {
+                id,
+                hash: summary.hash,
+                weight_ppm,
+                bytes: summary.bytes,
+            });
+            graph.add_edge(SemanticEdge {
+                from: ROOT_ID,
+                to: id,
+                weight_ppm,
+            });
+        }
+        summaries_total = deduped.len();
 
         if self.preempt.take() {
             self.phase = Phase::Active;
