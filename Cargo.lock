@@ -19,6 +19,7 @@ dependencies = [
 name = "aurora-cli"
 version = "0.1.0"
 dependencies = [
+ "aurora-consolidation",
  "aurora-core",
  "aurora-dharma-quantum",
  "aurora-dyad",
@@ -26,6 +27,14 @@ dependencies = [
  "aurora-mem8",
  "aurora-phoenix",
  "aurora-voice-shell",
+]
+
+[[package]]
+name = "aurora-consolidation"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-mem8",
 ]
 
 [[package]]

@@ -1,0 +1,10 @@
+[package]
+name = "aurora-consolidation"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Dream Phase: deterministic idle-state consolidation, graph pruning and admissibility"
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-mem8 = { path = "../aurora-mem8" }
