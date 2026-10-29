@@ -68,27 +68,26 @@ fn main() {
     let report = worker.run_once(start);
     let elapsed = start.elapsed();
 
-    let micros = elapsed.as_secs_f64() * 1e6;
+    let micros = elapsed.as_micros().max(1);
+    let millis = elapsed.as_millis();
+    let ev_per_s = (u128::from(events) * 1_000_000) / micros;
+    let ns_per_event = elapsed.as_nanos() / u128::from(events.max(1));
     println!("events            {events}");
-    println!("elapsed           {:.1} ms", elapsed.as_secs_f64() * 1e3);
-    println!(
-        "throughput        {:.0} events/s",
-        events as f64 / elapsed.as_secs_f64()
-    );
+    println!("elapsed           {millis} ms ({micros} us)");
+    println!("throughput        {ev_per_s} events/s");
     let before_total = buffer_bytes + graph_bytes;
     let after_total = worker.buffer().bytes() + worker.graph().bytes();
-    let saved = 100.0 * (1.0 - after_total as f64 / before_total as f64);
+    let saved_bytes = before_total.saturating_sub(after_total);
+    let saved_pct = (saved_bytes * 100).checked_div(before_total).unwrap_or(0);
     println!("footprint before  {before_total} B");
-    println!("footprint after   {after_total} B  (-{saved:.1}%)");
-    println!("per-event         {:.2} us", micros / events as f64);
+    println!("footprint after   {after_total} B  (-{saved_pct}%)");
+    println!("per-event         {ns_per_event} ns");
     println!("report            {report:?}");
     println!(
-        "json {{\"chunk\":{chunk_size},\"events\":{events},\"ms\":{:.1},\"ev_per_s\":{:.0},\"before\":{before_total},\"after\":{after_total},\"saved_pct\":{saved:.2},\"summaries\":{}}}",
-        elapsed.as_secs_f64() * 1e3,
-        events as f64 / elapsed.as_secs_f64(),
+        "json {{\"chunk\":{chunk_size},\"events\":{events},\"ms\":{millis},\"us\":{micros},\"ev_per_s\":{ev_per_s},\"before\":{before_total},\"after\":{after_total},\"saved_pct\":{saved_pct},\"summaries\":{}}}",
         match &report {
             aurora_consolidation::DreamReport::Consolidated { summaries, .. } => *summaries,
-            _ => 0usize,
+            _ => 0,
         }
     );
 }
