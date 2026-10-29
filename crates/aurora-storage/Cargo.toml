@@ -1,0 +1,9 @@
+[package]
+name = "aurora-storage"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Read-only zero-copy AURSNAP1 index over a byte buffer; safe Rust, no dependencies"
+
+[lib]
+name = "aurora_storage"

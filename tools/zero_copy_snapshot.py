@@ -65,9 +65,9 @@ HEADER_FMT = "<8sIIQQQQ16s"
 HEADER_SIZE = struct.calcsize(HEADER_FMT)
 assert HEADER_SIZE == 64, HEADER_SIZE
 
-# Node entry (32B) — salience(d) payload_off(I) payload_len(I) id_off(I)
-#                    id_len(H) scope_id(B) pinned(B) digest_prefix(Q)
-NODE_FMT = "<dIIIHBBQ"
+# Node entry (32B) — salience_micros(q) payload_off(I) payload_len(I) id_off(I)
+#                    id_len(H) scope_id(B) pinned(B) key_prefix(8s, big-endian)
+NODE_FMT = "<qIIIHBB8s"
 NODE_SIZE = struct.calcsize(NODE_FMT)
 assert NODE_SIZE == 32, NODE_SIZE
 
@@ -98,10 +98,18 @@ class FlatNodeInput:
 
     node_id: str
     payload: bytes
-    salience: float
+    salience_micros: int
     capability_scope: str
     pinned: bool
-    digest_prefix: int
+
+
+def pack_key_prefix(key: bytes) -> bytes:
+    """First eight bytes of ``key``, zero-padded, big-endian.
+
+    Big-endian keeps integer order equal to byte order, so the Rust index can
+    compare prefixes as u64 and get lexicographic order for free.
+    """
+    return key[:8].ljust(8, b"\x00")
 
 
 def _blake2b_root(*chunks: bytes) -> bytes:
@@ -168,14 +176,14 @@ def write_immutable_snapshot(
         index_table.extend(
             struct.pack(
                 NODE_FMT,
-                node.salience,
+                node.salience_micros,
                 payload_off,
                 len(node.payload),
                 id_off,
                 len(id_bytes),
                 scope_id,
                 1 if node.pinned else 0,
-                node.digest_prefix & 0xFFFF_FFFF_FFFF_FFFF,
+                pack_key_prefix(id_bytes),
             )
         )
 
@@ -315,7 +323,7 @@ class ZeroCopySnapshotReader:
     def get_node_zero_copy(
         self, index: int
     ) -> Tuple[memoryview, memoryview, float, str, bool]:
-        """Return ``(id_view, payload_view, salience, scope, pinned)``.
+        """Return ``(id_view, payload_view, salience_micros, scope, pinned)``.
 
         The two views are slices of the mapping, not copies. They are valid
         only while this reader is open.
@@ -326,14 +334,14 @@ class ZeroCopySnapshotReader:
 
         entry_offset = HEADER_SIZE + (index * NODE_SIZE)
         (
-            salience,
+            salience_micros,
             payload_off,
             payload_len,
             id_off,
             id_len,
             scope_id,
             pinned,
-            _digest_prefix,
+            _key_prefix,
         ) = struct.unpack_from(NODE_FMT, self._view, entry_offset)
 
         self._check_bounds(index, id_off, id_len, "id")
@@ -344,7 +352,7 @@ class ZeroCopySnapshotReader:
 
         id_view = self._view[id_off: id_off + id_len]
         payload_view = self._view[payload_off: payload_off + payload_len]
-        return id_view, payload_view, salience, ID_TO_SCOPE[scope_id], bool(pinned)
+        return id_view, payload_view, salience_micros, ID_TO_SCOPE[scope_id], bool(pinned)
 
     def iter_nodes_zero_copy(
         self,
@@ -378,8 +386,8 @@ def _self_check() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "checkpoint.aursnap"
         nodes = [
-            FlatNodeInput("node/a", b"alpha-payload", 0.5, "core:read", False, 1),
-            FlatNodeInput("node/b", b"beta", 1.5, "memory:semantic", True, 2),
+            FlatNodeInput("node/a", b"alpha-payload", 500_000, "core:read", False),
+            FlatNodeInput("node/b", b"beta", 1_500_000, "memory:semantic", True),
         ]
         write_immutable_snapshot(path, epoch=7, nodes=nodes)
 
@@ -390,16 +398,16 @@ def _self_check() -> None:
             assert reader.epoch == 7
             assert reader.node_count == 2
             got = {
-                bytes(id_view): (bytes(payload), sal, scope, pinned)
-                for id_view, payload, sal, scope, pinned in reader.iter_nodes_zero_copy()
+                bytes(id_view): (bytes(payload), sal_micros, scope, pinned)
+                for id_view, payload, sal_micros, scope, pinned in reader.iter_nodes_zero_copy()
             }
-        assert got[b"node/a"] == (b"alpha-payload", 0.5, "core:read", False), got
-        assert got[b"node/b"] == (b"beta", 1.5, "memory:semantic", True), got
+        assert got[b"node/a"] == (b"alpha-payload", 500_000, "core:read", False), got
+        assert got[b"node/b"] == (b"beta", 1_500_000, "memory:semantic", True), got
 
         # Rotation must not disturb an existing reader (layers 1 and 2).
         with ZeroCopySnapshotReader(path) as reader:
             write_immutable_snapshot(
-                path, epoch=8, nodes=[FlatNodeInput("node/c", b"gamma", 2.0, "core:write", False, 3)]
+                path, epoch=8, nodes=[FlatNodeInput("node/c", b"gamma", 2_000_000, "core:write", False)]
             )
             assert reader.epoch == 7
             assert bytes(reader.get_node_zero_copy(0)[1]) == b"alpha-payload"

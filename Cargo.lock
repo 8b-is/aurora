@@ -71,6 +71,10 @@ name = "aurora-phoenix"
 version = "0.1.0"
 
 [[package]]
+name = "aurora-storage"
+version = "0.1.0"
+
+[[package]]
 name = "aurora-voice-shell"
 version = "0.1.0"
 dependencies = [

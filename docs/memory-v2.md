@@ -57,7 +57,7 @@ allocation. It is **not** an MEM|8 format and does not replace `MEM8AU02`,
 
 A 64-byte header records magic `AURSNAP1`, version, flags, epoch, node count,
 `expected_size`, and the arena offset. A 32-byte index entry per node holds
-salience (f64), `payload_off`, `payload_len`, `id_off` (all u32), `id_len`
+salience (i64 millionths), `payload_off`, `payload_len`, `id_off` (all u32), `id_len`
 (u16), scope id, pinned flag, and a digest prefix. IDs and payloads share one
 UTF-8 arena; a 32-byte BLAKE2b-256 footer covers every preceding byte. Pointers
 are relative offsets, so the file is position-independent. Because offsets are
@@ -70,5 +70,12 @@ and verify the footer digest before exposing `memoryview` slices. This is what
 keeps a shrinking or replaced inode from delivering `SIGBUS`: the mapping can
 never outrun EOF, and rotation publishes a new inode rather than truncating a
 live one. Returned views borrow the mapping — release them before `close()`.
+
+The read-only Rust view lives in `crates/aurora-storage` (`mmap_index::AurSnapIndex`).
+It is safe Rust, carries no dependency, and validates magic, version, declared size,
+the arena offset and every slice bound. It does **not** recompute the BLAKE2b footer:
+verify the digest with the writer before trusting a snapshot from an untrusted source.
+The eighth byte run per entry is a big-endian key prefix, so a lookup decides on the
+prefix and touches the arena only when two ids share their first eight bytes.
 
 See `tools/zero_copy_snapshot.py` and the `SIGBUS` section of `SECURITY.md`.
