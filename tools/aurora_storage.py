@@ -51,10 +51,29 @@ ID_TO_SCOPE = {idx: name for idx, name in enumerate(ALLOWED_CAPABILITY_SCOPES)}
 AURSNAP1_MAGIC = b"AURSNAP1"
 AURSNAP1_HEADER_FMT = "<8sIIQQQQ16s"  # 64 bytes
 AURSNAP1_HEADER_SIZE = struct.calcsize(AURSNAP1_HEADER_FMT)
-# Zero-float p/q salience pair (salience_p: i32, salience_q: u32) + offsets + scope + pinned + digest_prefix = 32B
-AURSNAP1_NODE_FMT = "<iIIIIHBBQ"
-AURSNAP1_NODE_SIZE = struct.calcsize(AURSNAP1_NODE_FMT)
+# Bytes 0..24: little-endian `<iIIIIHBB` (salience_p, salience_q, payload_off, payload_len, id_off, id_len, scope_id, pinned)
+# Bytes 24..32: big-endian `>Q` (8-byte zero-padded UTF-8 `key_prefix` for single-register lexicographical comparison)
+AURSNAP1_NODE_LO_FMT = "<iIIIIHBB"
+AURSNAP1_NODE_HI_FMT = ">Q"
+AURSNAP1_NODE_SIZE = 32
 AURSNAP1_FOOTER_SIZE = 32
+
+
+def key_prefix_be_u64(key: bytes | str) -> int:
+    """Pack the first `min(|key|, 8)` UTF-8 bytes into an unsigned 64-bit integer in big-endian order."""
+    raw = key.encode("utf-8") if isinstance(key, str) else bytes(key)
+    padded = raw[:8].ljust(8, b"\x00")
+    return int.from_bytes(padded, byteorder="big", signed=False)
+
+
+def prefix_mask_be_u64(prefix_len: int) -> int:
+    """Compute a 64-bit big-endian bitmask isolating the top `min(prefix_len, 8)` bytes."""
+    k = max(0, min(int(prefix_len), 8))
+    if k == 0:
+        return 0
+    if k == 8:
+        return 0xFFFFFFFFFFFFFFFF
+    return (0xFFFFFFFFFFFFFFFF << ((8 - k) * 8)) & 0xFFFFFFFFFFFFFFFF
 
 
 class AdmissibilityRejectedError(ValueError):
@@ -306,12 +325,11 @@ def write_aursnap1_snapshot(snap_path: Path, epoch: int, graph: Dict[str, Any]) 
         sal_q = max(1, int(node.get("salience_q", 1_000_000)))
         scope_id = SCOPE_TO_ID[str(node.get("capability_scope", "core:read"))]
         pinned = 1 if node.get("pinned", False) else 0
-        digest_hex = str(node.get("digest", compute_node_digest(node_id, str(node.get("payload", "")), ID_TO_SCOPE[scope_id])))
-        digest_prefix = int(digest_hex[:16], 16)
+        key_prefix = key_prefix_be_u64(id_bytes)
 
         index_bytes.extend(
             struct.pack(
-                AURSNAP1_NODE_FMT,
+                AURSNAP1_NODE_LO_FMT,
                 sal_p,
                 sal_q,
                 payload_off,
@@ -320,8 +338,8 @@ def write_aursnap1_snapshot(snap_path: Path, epoch: int, graph: Dict[str, Any]) 
                 len(id_bytes),
                 scope_id,
                 pinned,
-                digest_prefix,
             )
+            + struct.pack(AURSNAP1_NODE_HI_FMT, key_prefix)
         )
 
     expected_file_size = string_arena_offset + len(arena) + AURSNAP1_FOOTER_SIZE
@@ -402,21 +420,25 @@ class ZeroCopySnapshotReader:
             raise
 
     def get_node(self, index: int) -> ZeroCopyNodeView:
-        """Read the `index`-th node directly from the verified page-cache mapping with bounds checks."""
+        """Read the `index`-th node directly from the verified page-cache mapping with bounds & spoof checks."""
         if index < 0 or index >= self.node_count:
             raise IndexError(f"node index {index} out of range [0, {self.node_count})")
         entry_off = AURSNAP1_HEADER_SIZE + index * AURSNAP1_NODE_SIZE
         view = memoryview(self._mm)
-        sal_p, sal_q, pay_off, pay_len, id_off, id_len, scope_id, pinned, digest_prefix = struct.unpack(
-            AURSNAP1_NODE_FMT, view[entry_off : entry_off + AURSNAP1_NODE_SIZE]
+        sal_p, sal_q, pay_off, pay_len, id_off, id_len, scope_id, pinned = struct.unpack(
+            AURSNAP1_NODE_LO_FMT, view[entry_off : entry_off + 24]
         )
-        if sal_q <= 0 or scope_id not in ID_TO_SCOPE:
+        (key_prefix,) = struct.unpack(AURSNAP1_NODE_HI_FMT, view[entry_off + 24 : entry_off + 32])
+        if sal_q <= 0 or sal_p < 0 or scope_id not in ID_TO_SCOPE or pinned not in (0, 1):
             raise AdmissibilityRejectedError("corrupted node entry in AURSNAP1")
         if id_off + id_len > self.arena_len or pay_off + pay_len > self.arena_len:
             raise AdmissibilityRejectedError("AURSNAP1 arena offset out of bounds")
 
         arena_base = self.arena_offset
-        node_id = bytes(view[arena_base + id_off : arena_base + id_off + id_len]).decode("utf-8")
+        id_bytes = bytes(view[arena_base + id_off : arena_base + id_off + id_len])
+        if key_prefix_be_u64(id_bytes) != key_prefix:
+            raise AdmissibilityRejectedError("AURSNAP1 spoofed key_prefix mismatch against arena id_bytes")
+        node_id = id_bytes.decode("utf-8")
         payload = bytes(view[arena_base + pay_off : arena_base + pay_off + pay_len]).decode("utf-8")
         return ZeroCopyNodeView(
             node_id=node_id,
@@ -425,8 +447,92 @@ class ZeroCopySnapshotReader:
             salience_p=sal_p,
             salience_q=sal_q,
             pinned=bool(pinned),
-            digest_prefix=digest_prefix,
+            digest_prefix=key_prefix,
         )
+
+    def _compare_entry_at(self, mid: int, target: bytes, target_prefix: int) -> int:
+        """Single-Register Lexicographical Ordering Algebra (`-1`, `0`, `+1`):
+        1. `entry_prefix != target_prefix` -> 1-instruction `u64` compare (`0` arena reads).
+        2. `|A| <= 8 and |B| <= 8` -> length tie-break (`0` arena reads).
+        3. `max(|A|, |B|) > 8` -> arena suffix comparison `A[8:]` vs `B[8:]` + spoof check.
+        """
+        entry_off = AURSNAP1_HEADER_SIZE + mid * AURSNAP1_NODE_SIZE
+        view = memoryview(self._mm)
+        (entry_prefix,) = struct.unpack(AURSNAP1_NODE_HI_FMT, view[entry_off + 24 : entry_off + 32])
+        if entry_prefix < target_prefix:
+            return -1
+        if entry_prefix > target_prefix:
+            return 1
+
+        (id_len,) = struct.unpack("<H", view[entry_off + 20 : entry_off + 22])
+        target_len = len(target)
+        if id_len <= 8 and target_len <= 8:
+            return -1 if id_len < target_len else (1 if id_len > target_len else 0)
+
+        (id_off,) = struct.unpack("<I", view[entry_off + 16 : entry_off + 20])
+        if id_off + id_len > self.arena_len:
+            raise AdmissibilityRejectedError("AURSNAP1 arena offset out of bounds during binary search")
+        arena_base = self.arena_offset
+        id_bytes = bytes(view[arena_base + id_off : arena_base + id_off + id_len])
+        if key_prefix_be_u64(id_bytes) != entry_prefix:
+            raise AdmissibilityRejectedError("AURSNAP1 spoofed key_prefix during binary search")
+        a_suf = id_bytes[8:]
+        b_suf = target[8:]
+        return -1 if a_suf < b_suf else (1 if a_suf > b_suf else 0)
+
+    def lower_bound(self, target: bytes | str) -> int:
+        """Find the first index `i` in `[0, node_count]` where `node_id[i] >= target`."""
+        t_bytes = target.encode("utf-8") if isinstance(target, str) else bytes(target)
+        t_prefix = key_prefix_be_u64(t_bytes)
+        lo = 0
+        hi = self.node_count
+        while lo < hi:
+            mid = (lo + hi) // 2
+            cmp_val = self._compare_entry_at(mid, t_bytes, t_prefix)
+            if cmp_val < 0:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    def get_by_id(self, target_key: str) -> Optional[ZeroCopyNodeView]:
+        """`O(log N)` register-first binary search over the 32-byte `AURSNAP1` Node Index."""
+        t_bytes = target_key.encode("utf-8")
+        t_prefix = key_prefix_be_u64(t_bytes)
+        lo = 0
+        hi = self.node_count
+        while lo < hi:
+            mid = (lo + hi) // 2
+            cmp_val = self._compare_entry_at(mid, t_bytes, t_prefix)
+            if cmp_val < 0:
+                lo = mid + 1
+            elif cmp_val > 0:
+                hi = mid
+            else:
+                node = self.get_node(mid)
+                return node if node.node_id == target_key else None
+        return None
+
+    def scan_prefix(self, prefix: str) -> List[ZeroCopyNodeView]:
+        """`O(log N + K)` prefix scan using single-register bitmask narrowing `(entry_prefix & mask) == p_u64`."""
+        p_bytes = prefix.encode("utf-8")
+        start_idx = self.lower_bound(p_bytes)
+        p_u64 = key_prefix_be_u64(p_bytes)
+        mask = prefix_mask_be_u64(len(p_bytes))
+        view = memoryview(self._mm)
+        results: List[ZeroCopyNodeView] = []
+
+        for idx in range(start_idx, self.node_count):
+            entry_off = AURSNAP1_HEADER_SIZE + idx * AURSNAP1_NODE_SIZE
+            (entry_prefix,) = struct.unpack(AURSNAP1_NODE_HI_FMT, view[entry_off + 24 : entry_off + 32])
+            (id_len,) = struct.unpack("<H", view[entry_off + 20 : entry_off + 22])
+            if (entry_prefix & mask) != p_u64 or id_len < len(p_bytes):
+                break
+            node = self.get_node(idx)
+            if len(p_bytes) > 8 and not node.node_id.encode("utf-8").startswith(p_bytes):
+                break
+            results.append(node)
+        return results
 
     def close(self) -> None:
         if hasattr(self, "_mm") and not self._mm.closed:
@@ -737,8 +843,73 @@ if __name__ == "__main__":
             n1 = reader.get_node(1)
             assert {n0.node_id, n1.node_id} == {"dup-high", "pin-0"}
             assert n0.salience_q == 1_000_000
+            assert reader.get_by_id("pin-0") == n1
+            assert reader.get_by_id("dup-high") == n0
+            assert reader.get_by_id("dup-low") is None
+
+        # 5. Differential Property-Based Verification (Exact Lookup, Boundary Misses, Prefix Range Scan, Adversarial Fuzzing)
+        corpus = [
+            ("a", "short-1", "core:read", 0.50, False),
+            ("ab", "short-2", "core:write", 0.60, True),
+            ("abcdefgh", "exact-8", "memory:episodic", 0.70, False),
+            ("abcdefgh1", "long-9-a", "memory:semantic", 0.75, False),
+            ("abcdefgh12", "long-10-b", "core:read", 0.80, True),
+            ("abcdefgh2", "long-9-c", "core:write", 0.85, False),
+            ("aurora:core:0", "core-zero", "core:read", 0.90, True),
+            ("aurora:core:1", "core-one", "core:write", 0.91, False),
+            ("aurora:mem:ep1", "mem-ep-1", "memory:episodic", 0.92, False),
+            ("aurora:mem:sem1", "mem-sem-1", "memory:semantic", 0.93, True),
+            ("család:otthon", "minden-ahol-otthon", "memory:semantic", 0.95, True),
+            ("大黒天:mahakala", "protector-of-hearth", "core:read", 0.99, True),
+        ]
+        oracle_nodes: Dict[str, Dict[str, Any]] = {}
+        for nid, pay, sc, sal, pin in corpus:
+            oracle_nodes[nid] = {
+                "payload": pay,
+                "capability_scope": sc,
+                "salience": sal,
+                "salience_p": int(round(sal * 1_000_000)),
+                "salience_q": 1_000_000,
+                "pinned": pin,
+                "digest": compute_node_digest(nid, pay, sc),
+            }
+        oracle_graph = {"nodes": oracle_nodes, "edges": []}
+        oracle_snap = Path(tmp) / "oracle.aursnap"
+        write_aursnap1_snapshot(oracle_snap, 42, oracle_graph)
+
+        with ZeroCopySnapshotReader(oracle_snap) as o_reader:
+            assert o_reader.node_count == len(oracle_nodes)
+            # Property 1: Exact Lookup Equivalence
+            for nid, meta in sorted(oracle_nodes.items()):
+                hit = o_reader.get_by_id(nid)
+                assert hit is not None and hit.node_id == nid and hit.payload == meta["payload"]
+                assert hit.digest_prefix == key_prefix_be_u64(nid)
+
+            # Property 2: Boundary Miss Safety
+            for miss in ["", "0", "aa", "abcdefg", "abcdefgh0", "abcdefgh11", "abcdefgh9", "aurora:zzz", "zzzzzzzz"]:
+                assert o_reader.get_by_id(miss) is None, f"unexpected hit on {miss!r}"
+
+            # Property 3: Prefix Range Equivalence
+            for pfx in ["", "a", "ab", "abcdefgh", "abcdefgh1", "aurora:", "aurora:core:", "család", "大黒天", "missing:"]:
+                expected_ids = [k for k in sorted(oracle_nodes.keys()) if k.startswith(pfx)]
+                actual_ids = [n.node_id for n in o_reader.scan_prefix(pfx)]
+                assert actual_ids == expected_ids, f"prefix {pfx!r}: {actual_ids} != {expected_ids}"
+
+        # Property 4: Header-Stamped Adversarial Fuzzing (spoofed `key_prefix` in descriptor with valid BLAKE2b footer)
+        raw_snap = bytearray(oracle_snap.read_bytes())
+        struct.pack_into(">Q", raw_snap, AURSNAP1_HEADER_SIZE + 24, 0xFFFFFFFFFFFFFFFF)
+        body_len = len(raw_snap) - AURSNAP1_FOOTER_SIZE
+        raw_snap[body_len:] = hashlib.blake2b(raw_snap[:body_len], digest_size=32).digest()
+        spoof_snap = Path(tmp) / "spoof.aursnap"
+        spoof_snap.write_bytes(bytes(raw_snap))
+        with ZeroCopySnapshotReader(spoof_snap) as s_reader:
+            try:
+                s_reader.get_node(0)
+                raise AssertionError("expected AdmissibilityRejectedError on spoofed key_prefix")
+            except AdmissibilityRejectedError:
+                pass
 
         print(
             f"[aurora_storage] OK epoch={ep} lsn={recovered.lsn} nodes={list(recovered.state['nodes'].keys())} "
-            f"root={recovered.state['root_hash'][:16]}... custodian={recovered.state['wigle_custodian']}"
+            f"oracle_nodes={len(oracle_nodes)} root={recovered.state['root_hash'][:16]}... custodian={recovered.state['wigle_custodian']}"
         )
