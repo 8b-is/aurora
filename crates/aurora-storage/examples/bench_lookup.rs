@@ -9,14 +9,11 @@
 //!
 //! `AURORA_BENCH_NODES` overrides the node count (default 1_000_000).
 
-use std::cmp::Ordering;
 use std::hint::black_box;
-use std::io::Result;
 use std::time::Instant;
 
 use aurora_storage::mmap_index::{
-    AurSnapIndex, CapabilityScope, FOOTER_SIZE, HEADER_SIZE, MAGIC, NODE_STRIDE, ZeroCopyNode,
-    pack_key_prefix,
+    AurSnapIndex, CapabilityScope, FOOTER_SIZE, HEADER_SIZE, MAGIC, NODE_STRIDE, pack_key_prefix,
 };
 
 const DEFAULT_NODE_COUNT: usize = 1_000_000;
@@ -49,36 +46,6 @@ fn write_hex_u64(val: u64, out: &mut [u8; 16]) {
         let shift = (15 - i) * 4;
         *slot = HEX[((val >> shift) & 0xF) as usize];
     }
-}
-
-/// Baseline: ignore `key_prefix`, dereference `id_off` into the arena on every
-/// probe.
-#[inline]
-fn get_by_id_arena_pointer<'a>(
-    raw_buf: &'a [u8],
-    index: &AurSnapIndex<'a>,
-    target_id: &[u8],
-) -> Result<Option<ZeroCopyNode<'a>>> {
-    let mut low = 0usize;
-    let mut high = index.node_count();
-
-    while low < high {
-        let mid = low + ((high - low) >> 1);
-        let entry_off = HEADER_SIZE + (mid * NODE_STRIDE);
-
-        let id_off = u32::from_le_bytes(raw_buf[entry_off + 16..entry_off + 20].try_into().unwrap())
-            as usize;
-        let id_len = u16::from_le_bytes(raw_buf[entry_off + 20..entry_off + 22].try_into().unwrap())
-            as usize;
-
-        match raw_buf[id_off..id_off + id_len].cmp(target_id) {
-            Ordering::Equal => return index.decode_node_at(mid).map(Some),
-            Ordering::Less => low = mid + 1,
-            Ordering::Greater => high = mid,
-        }
-    }
-
-    Ok(None)
 }
 
 struct Fixture {
@@ -201,6 +168,20 @@ fn measure<F: FnMut()>(iters: u64, mut f: F) -> u64 {
     best
 }
 
+fn bench_case<F>(label: &str, iters: u64, ring: &[Vec<u8>], mut f: F)
+where
+    F: FnMut(&[u8]) -> Option<u8>,
+{
+    let mask = QUERY_RING_LEN - 1;
+    let mut i = 0usize;
+    let ns = measure(iters, || {
+        let q = &ring[i & mask];
+        i = i.wrapping_add(1);
+        black_box(f(black_box(q)));
+    });
+    println!("{:<44} {:>9} {:>11}", label, ns, 1_000_000 / ns.max(1));
+}
+
 fn main() {
     let node_count = std::env::var("AURORA_BENCH_NODES")
         .ok()
@@ -228,105 +209,42 @@ fn main() {
     let index = AurSnapIndex::open(&high.buf).unwrap();
     assert_eq!(index.node_count(), node_count);
 
-    let mask = QUERY_RING_LEN - 1;
-
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &high.hits[i & mask];
-        i = i.wrapping_add(1);
-        let node = index.get_by_id(black_box(q)).unwrap().unwrap();
-        black_box(node.payload[0]);
+    bench_case("hit / plain arena search", iters, &high.hits, |q| {
+        index.get_by_id(q).unwrap().map(|n| n.payload[0])
     });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "hit / inline 8B prefix",
-        ns,
-        1_000_000 / ns.max(1)
-    );
-
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &high.hits[i & mask];
-        i = i.wrapping_add(1);
-        let node = get_by_id_arena_pointer(&high.buf, &index, black_box(q))
-            .unwrap()
-            .unwrap();
-        black_box(node.payload[0]);
+    bench_case("hit / inline 8B prefix", iters, &high.hits, |q| {
+        index.get_by_id_prefixed(q).unwrap().map(|n| n.payload[0])
     });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "hit / arena pointer",
-        ns,
-        1_000_000 / ns.max(1)
-    );
-
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &high.misses[i & mask];
-        i = i.wrapping_add(1);
-        let res = index.get_by_id(black_box(q)).unwrap();
-        debug_assert!(res.is_none());
-        black_box(res);
+    bench_case("miss / plain arena search", iters, &high.misses, |q| {
+        assert!(index.get_by_id(q).unwrap().is_none());
+        None
     });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "miss / inline 8B prefix",
-        ns,
-        1_000_000 / ns.max(1)
-    );
-
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &high.misses[i & mask];
-        i = i.wrapping_add(1);
-        let res = get_by_id_arena_pointer(&high.buf, &index, black_box(q)).unwrap();
-        debug_assert!(res.is_none());
-        black_box(res);
+    bench_case("miss / inline 8B prefix", iters, &high.misses, |q| {
+        assert!(index.get_by_id_prefixed(q).unwrap().is_none());
+        None
     });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "miss / arena pointer",
-        ns,
-        1_000_000 / ns.max(1)
-    );
 
     drop(high);
 
     let shared = build_fixture(node_count, true);
     let shared_index = AurSnapIndex::open(&shared.buf).unwrap();
 
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &shared.hits[i & mask];
-        i = i.wrapping_add(1);
-        let node = shared_index.get_by_id(black_box(q)).unwrap().unwrap();
-        black_box(node.payload[0]);
-    });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "hit shared prefix / inline 8B (fallback)",
-        ns,
-        1_000_000 / ns.max(1)
+    bench_case(
+        "hit shared prefix / plain arena",
+        iters,
+        &shared.hits,
+        |q| shared_index.get_by_id(q).unwrap().map(|n| n.payload[0]),
     );
-
-    let mut i = 0usize;
-    let ns = measure(iters, || {
-        let q = &shared.hits[i & mask];
-        i = i.wrapping_add(1);
-        let node = get_by_id_arena_pointer(&shared.buf, &shared_index, black_box(q))
+    bench_case("hit shared prefix / inline 8B", iters, &shared.hits, |q| {
+        shared_index
+            .get_by_id_prefixed(q)
             .unwrap()
-            .unwrap();
-        black_box(node.payload[0]);
+            .map(|n| n.payload[0])
     });
-    println!(
-        "{:<44} {:>9} {:>11}",
-        "hit shared prefix / arena pointer",
-        ns,
-        1_000_000 / ns.max(1)
-    );
 
     println!(
-        "\nnote: timings are host-local; error figures for the kernels are not involved here.\n\
-         each case: 10% warm-up then the minimum of 5 rounds, drawn from a {QUERY_RING_LEN}-entry ring."
+        "\nnote: plain arena search compares the full id on every probe and is the default.\n\
+         the 8B prefix path is opt-in and only wins when prefixes are mostly distinct.\n\
+         each case: 10% warm-up then the minimum of 5 rounds, ring of {QUERY_RING_LEN}."
     );
 }

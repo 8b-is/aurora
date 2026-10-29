@@ -277,12 +277,33 @@ impl<'a> AurSnapIndex<'a> {
         })
     }
 
-    /// Binary search by full id.
+    /// Binary search by full id, comparing each probe against the arena.
     ///
-    /// The prefix decides almost every probe without touching the arena. When
-    /// two ids share their first eight bytes, the full id from the arena is
-    /// compared, which is the only path that dereferences `id_off`.
+    /// This is the default: it makes no assumption about the ids beyond their
+    /// sorted order, so a shared namespace prefix costs nothing extra.
     pub fn get_by_id(&self, target: &[u8]) -> Result<Option<ZeroCopyNode<'a>>> {
+        let mut low = 0usize;
+        let mut high = self.node_count;
+
+        while low < high {
+            let mid = low + ((high - low) >> 1);
+            match self.id_at(mid)?.cmp(target) {
+                std::cmp::Ordering::Equal => return self.decode_node_at(mid).map(Some),
+                std::cmp::Ordering::Less => low = mid + 1,
+                std::cmp::Ordering::Greater => high = mid,
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Binary search that decides on the stored 8-byte prefix first.
+    ///
+    /// Faster only when the first eight id bytes are mostly distinct. When ids
+    /// share a prefix (a `"episodic:"` namespace, say), every probe falls back
+    /// to the full arena comparison and this is measurably *slower* than
+    /// [`Self::get_by_id`]. Put a namespace in the scope byte, not the id.
+    pub fn get_by_id_prefixed(&self, target: &[u8]) -> Result<Option<ZeroCopyNode<'a>>> {
         let target_prefix = pack_key_prefix(target);
         let mut low = 0usize;
         let mut high = self.node_count;
@@ -395,6 +416,30 @@ mod tests {
         }
         assert!(index.get_by_id(b"episodic:0004").unwrap().is_none());
         assert!(index.get_by_id(b"episodic:000").unwrap().is_none());
+    }
+
+    #[test]
+    fn plain_and_prefixed_search_agree() {
+        let ids: [&[u8]; 4] = [b"episodic:0001", b"episodic:0002", b"other", b"zzz"];
+        let payloads: [&[u8]; 4] = [b"1", b"2", b"3", b"4"];
+        let f = build(&ids, &payloads);
+        let index = AurSnapIndex::open(&f.buf).unwrap();
+
+        for (id, payload) in ids.iter().zip(payloads) {
+            let plain = index.get_by_id(id).unwrap().expect("plain finds it");
+            let prefixed = index
+                .get_by_id_prefixed(id)
+                .unwrap()
+                .expect("prefixed finds it");
+            assert_eq!(plain.id, prefixed.id);
+            assert_eq!(plain.payload, payload);
+            assert_eq!(prefixed.payload, payload);
+        }
+        let misses: [&[u8]; 3] = [b"episodic:0003", b"other2", b"aaaa"];
+        for miss in misses {
+            assert!(index.get_by_id(miss).unwrap().is_none());
+            assert!(index.get_by_id_prefixed(miss).unwrap().is_none());
+        }
     }
 
     #[test]

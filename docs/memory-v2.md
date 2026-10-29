@@ -75,7 +75,12 @@ The read-only Rust view lives in `crates/aurora-storage` (`mmap_index::AurSnapIn
 It is safe Rust, carries no dependency, and validates magic, version, declared size,
 the arena offset and every slice bound. It does **not** recompute the BLAKE2b footer:
 verify the digest with the writer before trusting a snapshot from an untrusted source.
-The eighth byte run per entry is a big-endian key prefix, so a lookup decides on the
-prefix and touches the arena only when two ids share their first eight bytes.
+
+`get_by_id` compares the full id from the arena on every probe; it is the default and
+makes no assumption about id shape. `get_by_id_prefixed` first compares the 8-byte
+big-endian key prefix stored per entry, and only reads the arena when two ids share
+their first eight bytes. At 1M nodes the prefixed path is roughly 4x faster when id
+prefixes are mostly distinct, and roughly neutral when every id shares a namespace
+prefix such as `"episodic:"`. Keep a namespace in the scope byte, not the id.
 
 See `tools/zero_copy_snapshot.py` and the `SIGBUS` section of `SECURITY.md`.
