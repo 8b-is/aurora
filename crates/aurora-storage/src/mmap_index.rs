@@ -299,10 +299,11 @@ impl<'a> AurSnapIndex<'a> {
 
     /// Binary search that decides on the stored 8-byte prefix first.
     ///
-    /// Faster only when the first eight id bytes are mostly distinct. When ids
+    /// Faster when the first eight id bytes are mostly distinct. When ids
     /// share a prefix (a `"episodic:"` namespace, say), every probe falls back
-    /// to the full arena comparison and this is measurably *slower* than
-    /// [`Self::get_by_id`]. Put a namespace in the scope byte, not the id.
+    /// to the same arena comparison the plain search makes, so the extra prefix
+    /// load costs nothing measurable: roughly neutral, not slower. Put a
+    /// namespace in the scope byte anyway, so ids stay sortable across scopes.
     pub fn get_by_id_prefixed(&self, target: &[u8]) -> Result<Option<ZeroCopyNode<'a>>> {
         let target_prefix = pack_key_prefix(target);
         let mut low = 0usize;
