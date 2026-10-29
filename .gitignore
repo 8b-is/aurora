@@ -6,3 +6,9 @@
 /.st/
 *.m8.lock
 deploy/worker.js
+
+# Android build output (the APK belongs in a release, not in git)
+/android/build/
+/dist/
+*.apk
+*.apk.idsig
