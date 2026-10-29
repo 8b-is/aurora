@@ -1,0 +1,11 @@
+# Default review ownership for the constellation.
+# Reviewers are requested automatically on every pull request once this file
+# lives on the base branch (main).
+
+* @8bit-wraith @standardgalactic
+
+# Runtime and crate surface: Chris keeps the horizon, Nate keeps the engines.
+/crates/        @8bit-wraith @standardgalactic
+/cmd/           @8bit-wraith @standardgalactic
+/brand/         @8bit-wraith
+/docs/          @standardgalactic
