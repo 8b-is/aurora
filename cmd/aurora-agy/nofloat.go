@@ -303,54 +303,63 @@ func countFloatViolations(path, text string) int {
 }
 
 func describeFloatViolations(path, text string) string {
-	lines := strings.Split(text, "\n")
-	badLines := collectFloatViolationLines(path, text)
-	if len(badLines) == 0 {
+	lines := collectFloatViolationLines(path, text)
+	if len(lines) == 0 {
 		return ""
 	}
-	// Focus on the first contiguous function/cluster (within 35 lines of the first violation)
-	// so large files can be fixed function-by-function without exceeding token limits.
-	first := badLines[0]
-	var cluster []int
-	for _, ln := range badLines {
-		if ln-first <= 35 {
-			cluster = append(cluster, ln)
+	allLines := strings.Split(text, "\n")
+	var b strings.Builder
+	if len(allLines) <= 220 {
+		b.WriteString("Offending floating-point lines in " + path + " (update all callers/callees in this file so types match):\n")
+		for _, ln := range lines {
+			if ln >= 1 && ln <= len(allLines) {
+				b.WriteString(fmt.Sprintf("  line %d: %s\n", ln, strings.TrimSpace(allLines[ln-1])))
+			}
+		}
+		return b.String()
+	}
+	b.WriteString("Target floating-point cluster in " + path + " (fix this function/section first; copy exact original lines including any comments into \"old\"):\n")
+	firstLine := lines[0]
+	shown := 0
+	for _, ln := range lines {
+		if ln-firstLine > 35 && shown >= 1 {
+			break
+		}
+		if ln >= 1 && ln <= len(allLines) {
+			b.WriteString(fmt.Sprintf("  line %d: %s\n", ln, strings.TrimSpace(allLines[ln-1])))
+			shown++
 		}
 	}
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Target offending line(s) to fix in %s (total offending lines in file: %d; replace the function containing line %d..%d with 0 float tokens in \"new\"):\n", path, len(badLines), cluster[0], cluster[len(cluster)-1]))
-	for _, ln := range cluster {
-		sb.WriteString(fmt.Sprintf("  line %d: %s\n", ln, lines[ln-1]))
-	}
-	return sb.String()
+	return b.String()
 }
 
 func excerptForPrompt(path, text string) string {
-	if len(text) <= 8000 {
+	if len(text) <= 7500 {
 		return text
 	}
-	badLines := collectFloatViolationLines(path, text)
-	lines := strings.Split(text, "\n")
-	if len(badLines) == 0 {
-		if len(lines) > 160 {
-			return strings.Join(lines[:160], "\n")
+	lines := collectFloatViolationLines(path, text)
+	allLines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		End := 160
+		if End > len(allLines) {
+			End = len(allLines)
 		}
-		return text
+		return strings.Join(allLines[:End], "\n")
 	}
-	first := badLines[0]
+	first := lines[0]
 	last := first
-	for _, ln := range badLines {
+	for _, ln := range lines {
 		if ln-first <= 35 {
 			last = ln
 		}
 	}
-	start := first - 25
-	if start < 1 {
-		start = 1
+	startIdx := first - 35
+	if startIdx < 0 {
+		startIdx = 0
 	}
-	end := last + 25
-	if end > len(lines) {
-		end = len(lines)
+	endIdx := last + 45
+	if endIdx > len(allLines) {
+		endIdx = len(allLines)
 	}
-	return strings.Join(lines[start-1:end], "\n")
+	return strings.Join(allLines[startIdx:endIdx], "\n")
 }

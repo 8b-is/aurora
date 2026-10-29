@@ -116,7 +116,18 @@ func (c *localClient) complete(ctx context.Context, model, prompt string) (compl
 	}
 	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 8192, "num_predict": 4096, "temperature": 0, "seed": 432}}
 	if strings.Contains(prompt, "Return only JSON") || strings.Contains(prompt, "Return ONLY valid JSON") {
-		body["format"] = "json"
+		body["format"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path":      map[string]any{"type": "string"},
+				"old":       map[string]any{"type": "string"},
+				"new":       map[string]any{"type": "string"},
+				"reason":    map[string]any{"type": "string"},
+				"no_change": map[string]any{"type": "boolean"},
+			},
+			"required":             []string{"reason"},
+			"additionalProperties": false,
+		}
 	}
 	if err = c.request(ctx, "/api/generate", body, &result); err != nil {
 		return result, err
