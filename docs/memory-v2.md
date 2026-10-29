@@ -47,3 +47,28 @@ After interruption, the final path contains the old or new complete snapshot on 
 filesystem supporting these semantics. Orphan `.tmp` snapshots are not silently
 promoted. A corrupted final snapshot requires restoration from a verified backup.
 Use a local filesystem for the live memory store; replicate backups separately.
+
+## Zero-copy snapshots (`AURSNAP1`)
+
+A third, separate format serves reads with no deserialization and no heap
+allocation. It is **not** an MEM|8 format and does not replace `MEM8AU02`,
+`MEM8EV02`, or the JSON `checkpoint.<epoch>.snap`; it is written only to a
+`.aursnap` path.
+
+A 64-byte header records magic `AURSNAP1`, version, flags, epoch, node count,
+`expected_size`, and the arena offset. A 32-byte index entry per node holds
+salience (f64), `payload_off`, `payload_len`, `id_off` (all u32), `id_len`
+(u16), scope id, pinned flag, and a digest prefix. IDs and payloads share one
+UTF-8 arena; a 32-byte BLAKE2b-256 footer covers every preceding byte. Pointers
+are relative offsets, so the file is position-independent. Because offsets are
+u32, writers reject any snapshot above 4 GiB instead of wrapping — note this is
+a wider ceiling than the 64 MiB MEM|8 limit, and a different checksum
+(BLAKE2b-256, not CRC32).
+
+Readers map exactly the `fstat`-verified size, prefault with `MADV_WILLNEED`,
+and verify the footer digest before exposing `memoryview` slices. This is what
+keeps a shrinking or replaced inode from delivering `SIGBUS`: the mapping can
+never outrun EOF, and rotation publishes a new inode rather than truncating a
+live one. Returned views borrow the mapping — release them before `close()`.
+
+See `tools/zero_copy_snapshot.py` and the `SIGBUS` section of `SECURITY.md`.
