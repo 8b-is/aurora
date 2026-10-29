@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 //! Integer-only CLI and the durable memory bridge used by the Go cortex.
+use aurora_consolidation::{DreamConfig, DreamWorker, EpisodicBuffer};
 use aurora_core::{Rational, TernarySpin};
 use aurora_dyad::DyadState;
 use aurora_mem8::MemoryLog;
@@ -34,9 +35,19 @@ pub fn run(args: &[String]) -> Result<String, String> {
             let events = MemoryLog::load(&path).map_err(|e| format!("MEM8: {e:?}"))?;
             Ok(format!("MEM8 durable events={} (no synthetic memories)\n", events.len()))
         }
+        "consolidate" => {
+            let path = args.get(2).map(PathBuf::from).unwrap_or_else(|| home_dir().join(".aurora/tasks.m8"));
+            let events = MemoryLog::load(&path).map_err(|e| format!("MEM8: {e:?}"))?;
+            let config = DreamConfig { idle_threshold: std::time::Duration::from_micros(0), ..DreamConfig::default() };
+            let mut worker = DreamWorker::new(config)
+                .with_buffer(EpisodicBuffer::from_events(events));
+            let start = std::time::Instant::now();
+            worker.heartbeat(0);
+            Ok(format!("dream-phase: {:?}\n", worker.run_once(start)))
+        }
         "kintsugi" => Ok("AURORA: preserve errors and repair from evidence.\n".into()),
         "status" => Ok("AURORA integer/p-q foundation · MEM8AU02/MEM8EV02\nLanguage-model and maintenance commands: aurora-agy help\n".into()),
-        "help" | "--help" | "-h" => Ok("aurora init|status|breathe|dyad|dream [FILE]|kintsugi\naurora memory append FILE P Q < RECEIPT\naurora memory recall FILE [LIMIT]\n".into()),
+        "help" | "--help" | "-h" => Ok("aurora init|status|breathe|dyad|dream [FILE]|consolidate [FILE]|kintsugi\naurora memory append FILE P Q < RECEIPT\naurora memory recall FILE [LIMIT]\n".into()),
         other => Err(format!("unknown command: {other}")),
     }
 }

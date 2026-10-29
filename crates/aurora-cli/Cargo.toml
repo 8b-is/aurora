@@ -17,3 +17,4 @@ aurora-dyad = { path = "../aurora-dyad" }
 aurora-dharma-quantum = { path = "../aurora-dharma-quantum" }
 aurora-infer = { path = "../aurora-infer" }
 aurora-voice-shell = { path = "../aurora-voice-shell" }
+aurora-consolidation = { path = "../aurora-consolidation" }

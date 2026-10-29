@@ -119,7 +119,8 @@ func scanSource(path, text string) error {
 				i++
 			}
 			lit := string(b[start:i])
-			floating := !hex && strings.ContainsAny(lit, "eE") || strings.HasSuffix(lit, "f32") || strings.HasSuffix(lit, "f64")
+			trimmed := strings.TrimSuffix(strings.TrimSuffix(lit, "usize"), "isize")
+			floating := !hex && strings.ContainsAny(trimmed, "eE") || strings.HasSuffix(lit, "f32") || strings.HasSuffix(lit, "f64")
 			if i < len(b) && b[i] == '.' && (i+1 == len(b) || b[i+1] != '.' && (b[i+1] >= '0' && b[i+1] <= '9' || !unicode.IsLetter(rune(b[i+1])) && b[i+1] != '_')) {
 				floating = true
 			}
