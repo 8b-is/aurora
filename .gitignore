@@ -12,3 +12,8 @@ deploy/worker.js
 /dist/
 *.apk
 *.apk.idsig
+
+# Signing material never belongs in git
+*.keystore
+*.jks
+*.p12
