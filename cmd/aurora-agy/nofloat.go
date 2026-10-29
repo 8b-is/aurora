@@ -324,3 +324,33 @@ func describeFloatViolations(path, text string) string {
 	}
 	return sb.String()
 }
+
+func excerptForPrompt(path, text string) string {
+	if len(text) <= 8000 {
+		return text
+	}
+	badLines := collectFloatViolationLines(path, text)
+	lines := strings.Split(text, "\n")
+	if len(badLines) == 0 {
+		if len(lines) > 160 {
+			return strings.Join(lines[:160], "\n")
+		}
+		return text
+	}
+	first := badLines[0]
+	last := first
+	for _, ln := range badLines {
+		if ln-first <= 35 {
+			last = ln
+		}
+	}
+	start := first - 25
+	if start < 1 {
+		start = 1
+	}
+	end := last + 25
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start-1:end], "\n")
+}
