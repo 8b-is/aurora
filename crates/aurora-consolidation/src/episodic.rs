@@ -31,7 +31,7 @@ pub struct SummaryRecord {
 impl SummaryRecord {
     /// Footprint of the record: 32-byte hash, 8-byte count, 8 bytes per retained id.
     fn footprint(&self) -> usize {
-        32 + 8 + self.source_ids.len() * 8
+        32 + 8 + self.source_ids.len().saturating_mul(8)
     }
 }
 
