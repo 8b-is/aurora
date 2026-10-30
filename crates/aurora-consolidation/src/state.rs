@@ -25,7 +25,7 @@ pub struct IdleClock {
 impl IdleClock {
     pub fn new(idle_threshold: Duration) -> Self {
         Self {
-            idle_threshold_us: u64::try_from(idle_threshold.as_micros()).unwrap_or(u64::MAX),
+            idle_threshold_us: idle_threshold.as_micros() as u64,
             last_activity_us: 0,
         }
     }
