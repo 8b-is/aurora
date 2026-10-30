@@ -38,7 +38,8 @@ fn temp_path(tag: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock")
         .as_nanos();
-    std::env::temp_dir().join(format!("aurora-dream-{tag}-{nanos}.m8"))
+    // Use u128 for nanos to ensure exact integer representation in the filename
+    std::env::temp_dir().join(format!("aurora-dream-{tag}-{}", nanos).replace("-", "_"))
 }
 
 /// A worker that is idle immediately, so tests exercise the pass itself.
