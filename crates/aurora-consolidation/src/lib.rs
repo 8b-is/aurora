@@ -15,7 +15,7 @@
 //!    mid-cycle is observed promptly instead of after the whole pass.
 //! 2. **No partial writes.** Consolidation mutates clones; the live graph is
 //!    replaced only after `admit` and the atomic checkpoint both succeed.
-//! 3. **Zero float.** Every weight, salience and hash is integer or `Rational`.
+//! 3. **Zero float.** Every weight, salience and hash is integer or `p/q` rational.
 //!
 //! The default chunk size is derived from measurement, not taste — see
 //! `docs/ULTRABACKYARDLOOP.md` for the 108-lap ledger behind it.
