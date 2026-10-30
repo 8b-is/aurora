@@ -116,19 +116,12 @@ func (c *localClient) complete(ctx context.Context, model, prompt string) (compl
 		return result, fmt.Errorf("model %q must have locally installed weights; no downloads or cloud fallback", model)
 	}
 	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 16384, "num_predict": 4096, "temperature": 0, "seed": 432}}
-	if strings.Contains(prompt, "Return only JSON") || strings.Contains(prompt, "Return ONLY valid JSON") {
-		body["format"] = map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"path":      map[string]any{"type": "string"},
-				"old":       map[string]any{"type": "string"},
-				"new":       map[string]any{"type": "string"},
-				"reason":    map[string]any{"type": "string"},
-				"no_change": map[string]any{"type": "boolean"},
-			},
-			"required":             []string{"reason"},
-			"additionalProperties": false,
-		}
+	if strings.Contains(prompt, "STRICT RUST-FIRST TRIAGE POLICY") {
+		body["format"] = json.RawMessage(`{"type":"object","properties":{"decision":{"type":"string"},"destination":{"type":"string"},"license":{"type":"string"},"mechanism":{"type":"string"},"next_action":{"type":"string"}},"required":["decision","destination","license","mechanism","next_action"],"additionalProperties":false}`)
+	} else if strings.Contains(prompt, "AUTO-FIX") {
+		body["format"] = json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"reason":{"type":"string"}},"required":["path","old","new","reason"],"additionalProperties":false}`)
+	} else if strings.Contains(prompt, "Return only JSON") || strings.Contains(prompt, "Return ONLY valid JSON") {
+		body["format"] = json.RawMessage(`{"anyOf":[{"type":"object","properties":{"no_change":{"type":"boolean"},"reason":{"type":"string"}},"required":["no_change","reason"],"additionalProperties":false},{"type":"object","properties":{"path":{"type":"string"},"old":{"type":"string"},"new":{"type":"string"},"reason":{"type":"string"}},"required":["path","old","new","reason"],"additionalProperties":false}]}`)
 	}
 	if err = c.request(ctx, "/api/generate", body, &result); err != nil {
 		return result, err

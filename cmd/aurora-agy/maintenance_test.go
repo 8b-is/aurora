@@ -178,6 +178,10 @@ func TestProposalsCannotModifyTestsOrEscape(t *testing.T) {
 	if e != nil || !p4.NoChange || p4.Reason != "first" {
 		t.Fatalf("failed to unwrap first proposal after think block: %+v %v", p4, e)
 	}
+	p5, e := parseProposal(`{"reason":"fixed float","path":"src/main.rs\",\"old\":\"fn a() -> f64 { 1.0 }\"\",\"new\":\"fn a() -> u64 { 1 }\"}"}`)
+	if e != nil || p5.Path != "src/main.rs" || p5.Old != "fn a() -> f64 { 1.0 }" || p5.New != "fn a() -> u64 { 1 }" {
+		t.Fatalf("failed to repair fused proposal: %+v %v", p5, e)
+	}
 }
 
 func TestTriageNextAndPruneJobDirs(t *testing.T) {

@@ -293,6 +293,34 @@ func unwrapModelJSON(text string) string {
 	return text
 }
 
+func repairFusedProposal(p *proposal) {
+	if p.Old != "" || p.New != "" || !strings.Contains(p.Path, `","old":"`) {
+		return
+	}
+	pathEnd := strings.Index(p.Path, `","old":"`)
+	if pathEnd <= 0 {
+		return
+	}
+	rest := p.Path[pathEnd+len(`","old":"`):]
+	newSep := strings.Index(rest, `","new":"`)
+	if newSep < 0 {
+		return
+	}
+	oldPart := strings.TrimSuffix(rest[:newSep], `"`)
+	newPart := strings.TrimSuffix(rest[newSep+len(`","new":"`):], `"}`)
+	newPart = strings.TrimSuffix(newPart, `"`)
+	unescape := func(s string) string {
+		var out string
+		if json.Unmarshal([]byte(`"`+s+`"`), &out) == nil {
+			return out
+		}
+		return s
+	}
+	p.Path = p.Path[:pathEnd]
+	p.Old = unescape(oldPart)
+	p.New = unescape(newPart)
+}
+
 func parseProposal(text string) (proposal, error) {
 	var p proposal
 	text = unwrapModelJSON(text)
@@ -301,6 +329,7 @@ func parseProposal(text string) (proposal, error) {
 	if err := d.Decode(&p); err != nil {
 		return p, err
 	}
+	repairFusedProposal(&p)
 	if p.Error != "" && p.Path == "" {
 		p.NoChange = true
 		p.Reason = p.Error
