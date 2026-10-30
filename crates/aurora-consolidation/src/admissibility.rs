@@ -126,13 +126,12 @@ pub fn admit(snapshot: Snapshot, previous_seq: u64) -> Result<Admitted, Violatio
     if snapshot.nodes.iter().any(|n| n.id == 0) {
         return Err(Violation::Schema("node id 0 is reserved"));
     }
+    let node_ids: std::collections::HashSet<u64> = snapshot.nodes.iter().map(|n| n.id).collect();
     for edge in &snapshot.edges {
         if edge.from == 0 || edge.to == 0 {
             return Err(Violation::Schema("edge endpoint id 0 is reserved"));
         }
-        let from_exists = snapshot.nodes.iter().any(|n| n.id == edge.from);
-        let to_exists = snapshot.nodes.iter().any(|n| n.id == edge.to);
-        if !from_exists || !to_exists {
+        if !node_ids.contains(&edge.from) || !node_ids.contains(&edge.to) {
             return Err(Violation::Schema("edge references a missing node"));
         }
     }
