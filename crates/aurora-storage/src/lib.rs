@@ -6,7 +6,7 @@
 //! (a `Vec`, or a mapping the Python writer produced) owns the lifetime.
 //!
 //! Integrity note: [`mmap_index::AurSnapIndex::open`] validates magic, version,
-//! declared size, the arena offset, and every slice bound. It does **not**
+//! declared size, and the arena offset. Node access validates slice bounds. It does **not**
 //! recompute the BLAKE2b footer, because this crate carries no crypto
 //! implementation. Verify the footer with the writer's tool (or a future
 //! in-tree BLAKE2b) before trusting a snapshot from an untrusted source.

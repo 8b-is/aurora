@@ -18,9 +18,10 @@ import (
 )
 
 type repository struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	Base string `json:"base"`
+	Name                    string   `json:"name"`
+	Path                    string   `json:"path"`
+	Base                    string   `json:"base"`
+	StandaloneRustManifests []string `json:"standalone_rust_manifests,omitempty"`
 }
 type maintenanceConfig struct {
 	Root            string       `json:"root"`
@@ -31,23 +32,25 @@ type maintenanceConfig struct {
 	Repositories    []repository `json:"repositories"`
 }
 type receipt struct {
-	Repo       string `json:"repo"`
-	Status     string `json:"status"`
-	Timestamp  int64  `json:"timestamp_secs"`
-	DurationMS int64  `json:"duration_ms"`
-	Base       string `json:"base_commit,omitempty"`
-	Commit     string `json:"commit,omitempty"`
-	Branch     string `json:"branch,omitempty"`
-	PR         string `json:"pr_url,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	Error      string `json:"error,omitempty"`
-	Passed     uint64 `json:"checks_passed"`
-	Attempted  uint64 `json:"checks_attempted"`
-	Ratio      string `json:"checks_passed_pq"`
-	Model      string `json:"model"`
-	Tokens     uint64 `json:"tokens_generated"`
-	EvalNS     uint64 `json:"eval_ns"`
-	LogDir     string `json:"log_dir"`
+	ScopeVersion int         `json:"validation_scope_version,omitempty"`
+	RustChecks   []rustCheck `json:"rust_checks,omitempty"`
+	Repo         string      `json:"repo"`
+	Status       string      `json:"status"`
+	Timestamp    int64       `json:"timestamp_secs"`
+	DurationMS   int64       `json:"duration_ms"`
+	Base         string      `json:"base_commit,omitempty"`
+	Commit       string      `json:"commit,omitempty"`
+	Branch       string      `json:"branch,omitempty"`
+	PR           string      `json:"pr_url,omitempty"`
+	Reason       string      `json:"reason,omitempty"`
+	Error        string      `json:"error,omitempty"`
+	Passed       uint64      `json:"checks_passed"`
+	Attempted    uint64      `json:"checks_attempted"`
+	Ratio        string      `json:"checks_passed_pq"`
+	Model        string      `json:"model"`
+	Tokens       uint64      `json:"tokens_generated"`
+	EvalNS       uint64      `json:"eval_ns"`
+	LogDir       string      `json:"log_dir"`
 }
 type job struct {
 	cfg      maintenanceConfig
@@ -55,6 +58,7 @@ type job struct {
 	dir      string
 	sequence int
 	receipt  receipt
+	rustMeta map[string]*rustMetadata
 }
 
 func loadConfig(path string) (maintenanceConfig, error) {
@@ -78,6 +82,11 @@ func loadConfig(path string) (maintenanceConfig, error) {
 	for _, r := range c.Repositories {
 		if !validSlug(r.Name) || !filepath.IsAbs(r.Path) || !validRef(r.Base) || seen[r.Name] {
 			return c, fmt.Errorf("invalid/duplicate repository entry %q", r.Name)
+		}
+		for _, manifest := range r.StandaloneRustManifests {
+			if !safeManifest(manifest) {
+				return c, fmt.Errorf("invalid standalone Rust manifest %q", manifest)
+			}
 		}
 		seen[r.Name] = true
 	}
@@ -487,6 +496,9 @@ func (j *job) process(cursor uint64) error {
 		if saved.Status == "pull_request_open" {
 			break
 		}
+		if saved.ScopeVersion != 1 {
+			return fmt.Errorf("recovery receipt lacks package validation scope; manual review required")
+		}
 		if !strings.HasPrefix(saved.Branch, "alexiai/aurora-") || !validRef(strings.TrimPrefix(saved.Branch, "alexiai/")) || len(saved.Commit) != 40 {
 			return fmt.Errorf("invalid recovery receipt")
 		}
@@ -498,6 +510,8 @@ func (j *job) process(cursor uint64) error {
 			return e
 		}
 		if strings.HasPrefix(remote, saved.Commit+"\t") {
+			j.receipt.ScopeVersion = saved.ScopeVersion
+			j.receipt.RustChecks = saved.RustChecks
 			j.receipt.Commit = saved.Commit
 			j.receipt.Branch = saved.Branch
 			j.receipt.Base = saved.Base
@@ -570,6 +584,11 @@ func (j *job) process(cursor uint64) error {
 		if err != nil {
 			return err
 		}
+		if filepath.Ext(name) == ".rs" {
+			if _, err := j.rustOwner(tree, name); err != nil {
+				continue
+			}
+		}
 		allowed[name] = string(raw)
 		candidates = append(candidates, name)
 	}
@@ -618,6 +637,11 @@ func (j *job) process(cursor uint64) error {
 	chosen := candidates[cursor%uint64(len(candidates))]
 	if len(floatCandidates) > 0 {
 		chosen = floatCandidates[cursor%uint64(len(floatCandidates))]
+	}
+	if filepath.Ext(chosen) == ".rs" {
+		if err := j.validateRustCandidate(tree, chosen, "baseline"); err != nil {
+			return err
+		}
 	}
 	activeFloatErr := scanSource(chosen, allowed[chosen])
 	floatHint := "\nNumeric guard status for this file: CLEAN (0 floating-point tokens). Ignore prior MEM8 receipts about already-fixed float errors; unless you find a concrete non-test logic bug, return {\"no_change\":true,\"reason\":\"...\"}."
@@ -726,6 +750,12 @@ func (j *job) process(cursor uint64) error {
 	if _, err = j.validate(tree, baselineClippyClean); err != nil {
 		return fmt.Errorf("candidate validation: %w", err)
 	}
+	if filepath.Ext(p.Path) == ".rs" {
+		if err := j.validateRustCandidate(tree, p.Path, "candidate"); err != nil {
+			return err
+		}
+	}
+	j.receipt.ScopeVersion = 1
 	after, err := j.command(tree, 20, "", "git", "diff", "--binary")
 	if err != nil {
 		return err

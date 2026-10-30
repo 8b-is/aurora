@@ -30,7 +30,7 @@ func TestLocalInferenceUsesMeasuredIntegers(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Error(err)
 		}
-		if request.Options.NumCtx != 8192 || request.Options.Temperature != 0 {
+		if request.Options.NumCtx != 16384 || request.Options.Temperature != 0 {
 			t.Error("unexpected inference options")
 		}
 		_, _ = w.Write([]byte(`{"done":true,"response":"ready","eval_count":7,"eval_duration":99}`))

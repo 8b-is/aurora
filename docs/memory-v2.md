@@ -50,30 +50,31 @@ Use a local filesystem for the live memory store; replicate backups separately.
 
 ## Zero-copy snapshots (`AURSNAP1`)
 
-A third, separate format serves reads with no deserialization and no heap
-allocation. It is **not** an MEM|8 format and does not replace `MEM8AU02`,
+A third, separate format serves reads without deserializing or copying ID
+and payload bytes. It is **not** an MEM|8 format and does not replace `MEM8AU02`,
 `MEM8EV02`, or the JSON `checkpoint.<epoch>.snap`; it is written only to a
 `.aursnap` path.
 
 A 64-byte header records magic `AURSNAP1`, version, flags, epoch, node count,
 `expected_size`, and the arena offset. A 32-byte index entry per node holds
 salience (i64 millionths), `payload_off`, `payload_len`, `id_off` (all u32), `id_len`
-(u16), scope id, pinned flag, and a digest prefix. IDs and payloads share one
-UTF-8 arena; a 32-byte BLAKE2b-256 footer covers every preceding byte. Pointers
-are relative offsets, so the file is position-independent. Because offsets are
+(u16), scope id, pinned flag, and an ID prefix. UTF-8 IDs and opaque payload bytes share one
+packed arena; a 32-byte BLAKE2b-256 footer covers every preceding byte. Pointers
+are absolute file offsets, so the file is position-independent. Because offsets are
 u32, writers reject any snapshot above 4 GiB instead of wrapping — note this is
 a wider ceiling than the 64 MiB MEM|8 limit, and a different checksum
 (BLAKE2b-256, not CRC32).
 
-Readers map exactly the `fstat`-verified size, prefault with `MADV_WILLNEED`,
-and verify the footer digest before exposing `memoryview` slices. This is what
-keeps a shrinking or replaced inode from delivering `SIGBUS`: the mapping can
-never outrun EOF, and rotation publishes a new inode rather than truncating a
-live one. Returned views borrow the mapping — release them before `close()`.
+Readers map exactly the physical size reported by `fstat`, request read-ahead
+with `MADV_WILLNEED`, and verify the header and footer before exposing node
+views. Rotation preserves readers because it publishes a new inode. This is
+not protection against unrelated writers truncating the old inode or later
+I/O faults. `close()` prevents new borrows and closes the descriptor; existing
+views retain the mapping until released. Flags and reserved bytes must be zero.
 
 The read-only Rust view lives in `crates/aurora-storage` (`mmap_index::AurSnapIndex`).
 It is safe Rust, carries no dependency, and validates magic, version, declared size,
-the arena offset and every slice bound. It does **not** recompute the BLAKE2b footer:
+the arena offset at open and slice bounds when nodes are accessed. It does **not** recompute the BLAKE2b footer:
 verify the digest with the writer before trusting a snapshot from an untrusted source.
 
 `get_by_id` compares the full id from the arena on every probe; it is the default and

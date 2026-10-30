@@ -16,18 +16,17 @@ process. User-space `sigaction`/`sigsetjmp` handling is not an option: it needs
 a jump buffer around every dereference, blocks dead-store/aliasing
 optimisation, and breaks async runtimes that migrate tasks across threads.
 
-This module removes the signal at its root instead, in four layers:
+This module avoids truncation by cooperating writers, in four layers:
 
 1. Immutable inode replacement — never mutate a snapshot in place. Write a
    fresh temporary inode, fsync it, drop it to ``0400``, then ``os.replace``.
 2. POSIX unlinked-inode lifetime — a replaced/unlinked inode keeps its blocks
    until the last ``munmap``, so open readers are unaffected by rotation.
-3. Pre-map ``fstat`` envelope check — validate the physical size against the
-   header's declared length *before* mapping, so virtual size never exceeds
-   physical EOF.
-4. Pre-populated page tables — ``MADV_WILLNEED`` plus a full footer digest
-   verification at open time, so late I/O errors and corruption surface at
-   construction rather than mid-query.
+3. File-size envelope check — map the physical size reported by ``fstat``,
+   then verify the declared length and table bounds before exposing nodes.
+4. Read-ahead advice — ``MADV_WILLNEED`` plus a full footer digest verification
+   detects existing corruption at open. Neither read-ahead nor permissions
+   prevent later I/O faults or truncation by a privileged/existing writer.
 
 Difference from ``aurora_storage``
 ----------------------------------
@@ -39,9 +38,9 @@ never rewritten into this format; the two coexist.
 Lifetime rule
 -------------
 A ``memoryview`` returned by :meth:`ZeroCopySnapshotReader.get_node_zero_copy`
-borrows the mapping. It must not outlive the reader: after ``close()`` any
-released-view access raises ``ValueError``. Read or copy before the ``with``
-block exits.
+keeps the mapping alive. ``close()`` prevents new borrows and closes the file
+descriptor; existing views (including slices of them) remain valid until
+released. Release views promptly to let the mapping be unmapped.
 """
 
 from __future__ import annotations
@@ -51,6 +50,7 @@ import mmap
 import os
 import stat
 import struct
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
@@ -112,7 +112,7 @@ def pack_key_prefix(key: bytes) -> bytes:
     return key[:8].ljust(8, b"\x00")
 
 
-def _blake2b_root(*chunks: bytes) -> bytes:
+def _blake2b_root(*chunks: bytes | memoryview) -> bytes:
     hasher = hashlib.blake2b(digest_size=FOOTER_SIZE)
     for chunk in chunks:
         hasher.update(chunk)
@@ -207,27 +207,29 @@ def write_immutable_snapshot(
 
     footer_digest = _blake2b_root(header, bytes(index_table), bytes(arena))
 
-    tmp_path = target_path.with_name(
-        f".{target_path.name}.{os.getpid()}.tmp"
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{target_path.name}.", suffix=".tmp", dir=target_path.parent
     )
+    tmp_path = Path(tmp_name)
     try:
-        os.unlink(tmp_path)
-    except FileNotFoundError:
-        pass
-
-    fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        for chunk in (header, index_table, arena, footer_digest):
-            os.write(fd, chunk)
-        os.fsync(fd)
-        # Drop write permission on the inode itself so no later O_RDWR open can
-        # truncate the mapping out from under a reader.
-        os.fchmod(fd, stat.S_IRUSR)
+        try:
+            for chunk in (header, index_table, arena, footer_digest):
+                with memoryview(chunk) as data:
+                    written = 0
+                    while written < len(data):
+                        count = os.write(fd, data[written:])
+                        if count <= 0:
+                            raise OSError("snapshot write made no progress")
+                        written += count
+            # Read-only mode discourages accidental writes; it is not a seal.
+            os.fchmod(fd, stat.S_IRUSR)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp_path, target_path)
+        _fsync_dir(target_path.parent)
     finally:
-        os.close(fd)
-
-    os.replace(tmp_path, target_path)
-    _fsync_dir(target_path.parent)
+        tmp_path.unlink(missing_ok=True)
 
 
 class ZeroCopySnapshotReader:
@@ -269,18 +271,20 @@ class ZeroCopySnapshotReader:
             (
                 magic,
                 version,
-                _flags,
+                flags,
                 self.epoch,
                 self.node_count,
                 expected_size,
                 self.arena_offset,
-                _reserved,
+                reserved,
             ) = struct.unpack_from(HEADER_FMT, self._view, 0)
 
             if magic != MAGIC:
                 raise SnapshotFormatError(f"bad magic {magic!r}")
             if version != VERSION:
                 raise SnapshotFormatError(f"unsupported version {version}")
+            if flags != 0 or reserved != b"\x00" * 16:
+                raise SnapshotFormatError("unsupported flags or reserved bytes")
             if expected_size != file_size:
                 raise SnapshotFormatError(
                     f"header expects {expected_size}B, fstat reports {file_size}B"
@@ -296,9 +300,8 @@ class ZeroCopySnapshotReader:
 
             if verify_digest_on_open:
                 stored = bytes(self._view[file_size - FOOTER_SIZE:])
-                computed = _blake2b_root(
-                    bytes(self._view[: file_size - FOOTER_SIZE])
-                )
+                with self._view[: file_size - FOOTER_SIZE] as data:
+                    computed = _blake2b_root(data)
                 if computed != stored:
                     raise SnapshotFormatError("BLAKE2b integrity check failed")
         except Exception:
@@ -322,15 +325,16 @@ class ZeroCopySnapshotReader:
 
     def get_node_zero_copy(
         self, index: int
-    ) -> Tuple[memoryview, memoryview, float, str, bool]:
+    ) -> Tuple[memoryview, memoryview, int, str, bool]:
         """Return ``(id_view, payload_view, salience_micros, scope, pinned)``.
 
-        The two views are slices of the mapping, not copies. They are valid
-        only while this reader is open.
+        The two views are slices of the mapping, not copies. They retain the
+        mapping until released, even if the reader is closed.
         """
+        if self._view is None:
+            raise ValueError("reader is closed")
         if not (0 <= index < self.node_count):
             raise IndexError(f"node {index} out of range [0, {self.node_count})")
-        assert self._view is not None, "reader is closed"
 
         entry_offset = HEADER_SIZE + (index * NODE_SIZE)
         (
@@ -349,6 +353,8 @@ class ZeroCopySnapshotReader:
 
         if scope_id not in ID_TO_SCOPE:
             raise SnapshotFormatError(f"node {index} has unknown scope {scope_id}")
+        if pinned not in (0, 1):
+            raise SnapshotFormatError(f"node {index} has invalid pinned flag {pinned}")
 
         id_view = self._view[id_off: id_off + id_len]
         payload_view = self._view[payload_off: payload_off + payload_len]
@@ -356,18 +362,21 @@ class ZeroCopySnapshotReader:
 
     def iter_nodes_zero_copy(
         self,
-    ) -> Iterator[Tuple[memoryview, memoryview, float, str, bool]]:
+    ) -> Iterator[Tuple[memoryview, memoryview, int, str, bool]]:
         for index in range(self.node_count):
             yield self.get_node_zero_copy(index)
 
     def close(self) -> None:
-        # Release the exported views before the mapping, or mmap.close() raises
-        # BufferError. Callers holding a view will see ValueError afterwards.
+        # Descendant views cannot be revoked. If any remain, their buffer
+        # references own the mapping until they are released or collected.
         if self._view is not None:
             self._view.release()
             self._view = None
         if self._mmap is not None:
-            self._mmap.close()
+            try:
+                self._mmap.close()
+            except BufferError:
+                pass
             self._mmap = None
         if self._fd is not None:
             os.close(self._fd)

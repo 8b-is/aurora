@@ -44,6 +44,7 @@ pub const FOOTER_SIZE: usize = 32;
 pub const MINIMUM_ENVELOPE: usize = HEADER_SIZE + FOOTER_SIZE;
 
 const OFF_VERSION: usize = 8;
+const OFF_FLAGS: usize = 12;
 const OFF_EPOCH: usize = 16;
 const OFF_NODE_COUNT: usize = 24;
 const OFF_EXPECTED_SIZE: usize = 32;
@@ -161,6 +162,9 @@ impl<'a> AurSnapIndex<'a> {
         if version != VERSION {
             return invalid("unsupported version");
         }
+        if read_u32(buf, OFF_FLAGS)? != 0 || buf[48..64].iter().any(|byte| *byte != 0) {
+            return invalid("unsupported flags or reserved bytes");
+        }
 
         let epoch = read_u64(buf, OFF_EPOCH)?;
         let declared_count = read_u64(buf, OFF_NODE_COUNT)?;
@@ -268,6 +272,9 @@ impl<'a> AurSnapIndex<'a> {
         let scope_byte = self.buf[e + NODE_SCOPE];
         let scope = CapabilityScope::from_u8(scope_byte)
             .ok_or_else(|| Error::new(ErrorKind::InvalidData, "unknown capability scope"))?;
+        if self.buf[e + NODE_PINNED] > 1 {
+            return invalid("invalid pinned flag");
+        }
         Ok(ZeroCopyNode {
             id: self.id_at(index)?,
             payload: self.payload_at(index)?,
@@ -329,6 +336,49 @@ impl<'a> AurSnapIndex<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_python_writer_golden_snapshot() {
+        let hex = include_str!("../../../tests/fixtures/aursnap1.hex").trim();
+        let buf: Vec<u8> = hex
+            .as_bytes()
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+            .collect();
+        let index = AurSnapIndex::open(&buf).unwrap();
+        assert_eq!(index.epoch(), 7);
+        assert_eq!(index.node_count(), 2);
+        let a = index.get_by_id(b"node/a").unwrap().unwrap();
+        assert_eq!(a.payload, b"alpha\x00payload");
+        assert_eq!(a.salience_micros, -500_000);
+        assert_eq!(a.scope, CapabilityScope::CoreRead);
+        assert!(!a.pinned);
+        let b = index
+            .get_by_id_prefixed("node/β".as_bytes())
+            .unwrap()
+            .unwrap();
+        assert_eq!(b.payload, b"\xffbeta");
+        assert_eq!(b.salience_micros, 5_000_000_000);
+        assert_eq!(b.scope, CapabilityScope::MemorySemantic);
+        assert!(b.pinned);
+    }
+
+    #[test]
+    fn rejects_unknown_layout_flags_and_non_boolean_pinned() {
+        let mut f = build(&[b"a"], &[b"payload"]);
+        f.buf[OFF_FLAGS] = 0x62;
+        assert!(AurSnapIndex::open(&f.buf).is_err());
+        f.buf[OFF_FLAGS] = 0;
+        f.buf[HEADER_SIZE + NODE_PINNED] = 2;
+        assert!(
+            AurSnapIndex::open(&f.buf)
+                .unwrap()
+                .decode_node_at(0)
+                .is_err()
+        );
+    }
 
     struct Fixture {
         buf: Vec<u8>,
