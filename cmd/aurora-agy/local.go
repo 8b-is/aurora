@@ -46,7 +46,8 @@ func newLocalClient(endpoint string) (*localClient, error) {
 	}
 	addr := net.JoinHostPort(ip.String(), u.Port())
 	transport := &http.Transport{
-		Proxy: nil,
+		Proxy:             nil,
+		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, requested string) (net.Conn, error) {
 			if requested != addr {
 				return nil, fmt.Errorf("sovereignty violation: unexpected destination")
@@ -114,7 +115,7 @@ func (c *localClient) complete(ctx context.Context, model, prompt string) (compl
 	if !found {
 		return result, fmt.Errorf("model %q must have locally installed weights; no downloads or cloud fallback", model)
 	}
-	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 8192, "num_predict": 4096, "temperature": 0, "seed": 432}}
+	body := map[string]any{"model": model, "prompt": prompt, "stream": false, "think": false, "keep_alive": -1, "options": map[string]int{"num_ctx": 16384, "num_predict": 4096, "temperature": 0, "seed": 432}}
 	if strings.Contains(prompt, "Return only JSON") || strings.Contains(prompt, "Return ONLY valid JSON") {
 		body["format"] = map[string]any{
 			"type": "object",
