@@ -78,7 +78,11 @@ fn main() {
     let before_total = buffer_bytes + graph_bytes;
     let after_total = worker.buffer().bytes() + worker.graph().bytes();
     let saved_bytes = before_total.saturating_sub(after_total);
-    let saved_pct = (saved_bytes * 100).checked_div(before_total).unwrap_or(0);
+    let saved_pct = if before_total > 0 {
+        (saved_bytes * 100).checked_div(before_total).unwrap_or(0)
+    } else {
+        0
+    };
     println!("footprint before  {before_total} B");
     println!("footprint after   {after_total} B  (-{saved_pct}%)");
     println!("per-event         {ns_per_event} ns");
