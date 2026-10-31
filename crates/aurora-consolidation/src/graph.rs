@@ -177,6 +177,13 @@ impl StateGraph {
                 retained[i] = true;
             }
         }
+        // Ensure that if an anchor was merged into a canonical node, 
+        // the canonical node is marked as retained even if it has no edges.
+        for &anchor_id in &anchor_ids {
+            if let Some(i) = index_of(anchor_id) {
+                retained[i] = true;
+            }
+        }
         let mut pruned = 0usize;
         let mut survivors: Vec<SemanticNode> = Vec::with_capacity(canonical.len());
         for (i, node) in canonical.into_iter().enumerate() {
