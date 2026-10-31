@@ -80,7 +80,7 @@ func scanSource(path, text string) error {
 				continue
 			}
 		}
-		quoted := b[i] == '"' || b[i] == '`' || b[i] == '\'' && (filepath.Ext(path) == ".js" || i+2 < len(b) && b[i+2] == '\'' || i+3 < len(b) && b[i+1] == '\\' && b[i+3] == '\'')
+		quoted := b[i] == '"' || b[i] == '`' || (b[i] == '\'' && (filepath.Ext(path) == ".js" || i+2 < len(b) && b[i+2] == '\'' || i+3 < len(b) && b[i+1] == '\\' && b[i+3] == '\''))
 		if quoted {
 			q := b[i]
 			i++
@@ -248,7 +248,7 @@ func collectFloatViolationLines(path, text string) []int {
 					}
 				}
 			}
-			quoted := b[i] == '"' || b[i] == '`' || b[i] == '\'' && (filepath.Ext(path) == ".js" || i+2 < len(b) && b[i+2] == '\'' || i+3 < len(b) && b[i+1] == '\\' && b[i+3] == '\'')
+			quoted := b[i] == '"' || b[i] == '`' || (b[i] == '\'' && (filepath.Ext(path) == ".js" || i+2 < len(b) && b[i+2] == '\'' || i+3 < len(b) && b[i+1] == '\\' && b[i+3] == '\''))
 			if quoted {
 				q := b[i]
 				i++
