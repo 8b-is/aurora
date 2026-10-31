@@ -26,3 +26,11 @@ jobs:
       - run: go vet ./...
       - run: test -z "$(gofmt -l cmd)"
       - run: go run ./cmd/aurora-agy audit .
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile tools/zero_copy_snapshot.py
+      - run: python3 tools/zero_copy_snapshot.py
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
