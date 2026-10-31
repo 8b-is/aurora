@@ -47,7 +47,7 @@ fn main() {
         };
         let (q, r) = (micros / 1_000, micros % 1_000);
         println!(
-            "{nodes:>9}  {q:>4}.{r:>1}ms  {:>8}  {verdict} (merged {merged}, pruned {pruned})",
+            "{nodes:>9}  {q:>4}.{r:>3}ms  {:>8}  {verdict} (merged {merged}, pruned {pruned})",
             ""
         );
     }
