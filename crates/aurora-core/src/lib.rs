@@ -113,7 +113,7 @@ impl WaveMemoryTuple {
         phase_turns_ppm: u32,
         timestamp_us: u64,
         spin: TernarySpin,
-    ) -> Kintsugi<Self> {
+    ) -> Result<Self, KintsugiError> {
         if amplitude_ppm > SCALE || phase_turns_ppm >= SCALE {
             return Err(KintsugiError::InvalidData);
         }
