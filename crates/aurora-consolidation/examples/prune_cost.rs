@@ -38,14 +38,16 @@ fn main() {
         let start = Instant::now();
         let (merged, pruned) = graph.prune();
         let elapsed = start.elapsed();
-        let ms = elapsed.as_secs_f64() * 1e3;
-        let verdict = if ms <= 5.0 {
+        let micros = elapsed.as_micros();
+        let contract_micros = 5_000u128;
+        let verdict = if micros <= contract_micros {
             "within contract"
         } else {
             "EXCEEDS contract"
         };
+        let (q, r) = (micros / 1_000, micros % 1_000);
         println!(
-            "{nodes:>9}  {ms:>9.2}ms  {:>8}  {verdict} (merged {merged}, pruned {pruned})",
+            "{nodes:>9}  {q:>4}.{r:>1}ms  {:>8}  {verdict} (merged {merged}, pruned {pruned})",
             ""
         );
     }
