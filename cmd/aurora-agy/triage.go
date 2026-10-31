@@ -48,6 +48,10 @@ type triageReceipt struct {
 }
 
 func pruneJobDirs(root, prefix string, keep int) {
+	pruneJobDirsWithRemove(root, prefix, keep, os.RemoveAll, os.Stderr)
+}
+
+func pruneJobDirsWithRemove(root, prefix string, keep int, removeAll func(string) error, stderr io.Writer) {
 	if keep < 1 {
 		return
 	}
@@ -75,8 +79,8 @@ func pruneJobDirs(root, prefix string, keep int) {
 	}
 	sort.Slice(matched, func(i, j int) bool { return matched[i].mod > matched[j].mod })
 	for _, item := range matched[keep:] {
-		if err := os.RemoveAll(item.path); err != nil {
-			// Log or handle error if necessary, but do not stop pruning
+		if err := removeAll(item.path); err != nil {
+			fmt.Fprintf(stderr, "prune job directory %q: %v\n", item.path, err)
 		}
 	}
 }
