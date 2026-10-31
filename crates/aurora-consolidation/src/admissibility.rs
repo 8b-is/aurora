@@ -123,6 +123,8 @@ pub fn admit(snapshot: Snapshot, previous_seq: u64) -> Result<Admitted, Violatio
     if snapshot.edges.iter().any(|e| e.weight_ppm > 1_000_000) {
         return Err(Violation::Capability("edge weight above 1_000_000 ppm"));
     }
+    // Ensure weight_ppm is within valid u32 range if it were to represent a fraction
+    // but since it is an integer ppm, we check it against the 1,000,000 ceiling.
     if snapshot.nodes.iter().any(|n| n.id == 0) {
         return Err(Violation::Schema("node id 0 is reserved"));
     }
