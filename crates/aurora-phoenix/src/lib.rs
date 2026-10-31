@@ -25,7 +25,12 @@ impl PhoenixState {
         Self::default()
     }
     pub fn update(&mut self, raw_jitter: u32) {
-        self.smooth_jitter = (7 * self.smooth_jitter + raw_jitter.min(SCALE)) / 8;
+        // EWMA with alpha=1/8: new = old + (1/8)*(input - old)
+        // To avoid overflow with u32, we use u64 for intermediate calculation.
+        // (7 * old + input) / 8
+        let old = self.smooth_jitter as u64;
+        let input = raw_jitter.min(SCALE) as u64;
+        self.smooth_jitter = ((7 * old + input) / 8) as u32;
     }
     pub fn stability(&self) -> u32 {
         SCALE - self.smooth_jitter
