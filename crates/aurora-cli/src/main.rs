@@ -10,6 +10,7 @@ fn main() {
                 eprintln!("failed to write to stdout: {e}");
                 std::process::exit(1);
             }
+            let _ = stdout.flush();
         }
         Err(error) => {
             eprintln!("{error}");
