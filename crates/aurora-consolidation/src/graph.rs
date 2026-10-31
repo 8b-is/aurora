@@ -56,7 +56,7 @@ impl StateGraph {
         self.nodes.iter().find(|n| n.id == id)
     }
 
-    /// Approximate footprint in bytes.
+    /// Footprint in bytes.
     pub fn bytes(&self) -> usize {
         self.nodes
             .iter()
