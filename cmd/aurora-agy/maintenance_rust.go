@@ -36,6 +36,13 @@ func safeManifest(p string) bool {
 	return !filepath.IsAbs(p) && filepath.Clean(p) == p && p != ".." && !strings.HasPrefix(p, "../") && !strings.Contains(p, "\\") && filepath.Base(p) == "Cargo.toml"
 }
 
+func cleanResolvedPath(p string) string {
+	if resolved, err := filepath.EvalSymlinks(p); err == nil {
+		return filepath.Clean(resolved)
+	}
+	return filepath.Clean(p)
+}
+
 func (j *job) loadRustPlanMetadata(tree, plan, targetManifest string) (*rustMetadata, bool) {
 	planPath := filepath.Join(tree, plan)
 	targetPath := filepath.Join(tree, targetManifest)
@@ -114,8 +121,9 @@ func (j *job) rustOwner(tree, source string) (rustOwner, error) {
 		if !ok {
 			continue
 		}
+		targetManifestPath := cleanResolvedPath(filepath.Join(tree, manifest))
 		for _, pkg := range metadata.Packages {
-			if filepath.Clean(pkg.Manifest) != filepath.Join(tree, manifest) || pkg.ID == "" || pkg.Name == "" {
+			if cleanResolvedPath(pkg.Manifest) != targetManifestPath || pkg.ID == "" || pkg.Name == "" {
 				continue
 			}
 			for _, member := range metadata.Members {
