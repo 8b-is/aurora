@@ -16,7 +16,7 @@ impl AudioSink for NullSink {
 pub fn fine_touch_fade(t: u32) -> u32 {
     let t = u128::from(t.min(SCALE));
     let s = u128::from(SCALE);
-    // Smoothstep polynomial: 3t^2 - 2t^3. 
+    // Smoothstep polynomial: 3t^2 - 2t^3.
     // To scale to [0, SCALE], we use (3t^2s - 2t^3) / s^2
     // which is equivalent to (t^2 * (3s - 2t)) / s^2
     // We use u128 to prevent overflow during intermediate products.

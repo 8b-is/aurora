@@ -37,7 +37,8 @@ impl SummaryRecord {
     /// Returns the total size of the source payloads represented by this record.
     /// This is used to track the actual data volume being distilled.
     pub fn payload_bytes(&self, events: &[MemoryEvent]) -> usize {
-        events.iter()
+        events
+            .iter()
             .filter(|e| self.source_ids.contains(&e.id) || self.source_count > 0)
             .map(|e| e.payload.len())
             .sum()

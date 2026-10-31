@@ -177,7 +177,7 @@ impl StateGraph {
                 retained[i] = true;
             }
         }
-        // Ensure that if an anchor was merged into a canonical node, 
+        // Ensure that if an anchor was merged into a canonical node,
         // the canonical node is marked as retained even if it has no edges.
         for &anchor_id in &anchor_ids {
             if let Some(i) = index_of(anchor_id) {
