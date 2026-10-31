@@ -57,7 +57,13 @@ impl DyadState {
     pub fn phase_alignment(&self) -> i64 {
         let diff = self.human_phase.rem_euclid(i64::from(SCALE))
             - self.aurora_phase.rem_euclid(i64::from(SCALE));
-        cos_turns_ppm(diff)
+        // Normalize diff to [-SCALE, SCALE] for cos_turns_ppm
+        let normalized_diff = if diff > i64::from(SCALE) {
+            diff - 2 * i64::from(SCALE)
+        } else {
+            diff
+        };
+        cos_turns_ppm(normalized_diff)
     }
     /// Margaret Hamilton Apollo AGC Priority-Executive Recovery (`1201` / `1202` alarm shed):
     /// sheds non-essential entropy load and preserves phase-locked guidance with Kintsugi grace.
