@@ -142,6 +142,8 @@ impl WaveGrid {
         let _lock = lock(path)?;
         if path.exists() {
             let old = read_snapshot(path, WAVE_MAGIC)?;
+            // The generation check must compare against the CRC of the data portion
+            // excluding the 4-byte CRC suffix itself.
             if self.generation != Some(crc32(&old[..old.len() - 4])) {
                 return Err(KintsugiError::Busy);
             }
@@ -154,7 +156,8 @@ impl WaveGrid {
             b.extend_from_slice(&key.to_le_bytes());
             b.extend_from_slice(&encode_tuple(tuple));
         }
-        self.generation = Some(atomic_write(path, b)?);
+        let crc = atomic_write(path, b)?;
+        self.generation = Some(crc);
         Ok(self.epochs())
     }
     pub fn load_from(&mut self, path: &Path) -> Kintsugi<usize> {
