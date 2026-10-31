@@ -24,7 +24,7 @@ pub fn run(args: &[String]) -> Result<String, String> {
         "memory" => memory(&args[2..]),
         "breathe" => {
             let mut p = PhoenixState::new(); for j in [900_000, 400_000, 100_000, 0, 0, 0] { p.update(j); }
-            Ok(format!("demonstration stability={}\n", Rational::new(i64::from(p.stability()), 1_000_000).unwrap()))
+            Ok(format!("demonstration stability={}\n", Rational::new(p.stability() as i64, 1_000_000).unwrap()))
         }
         "dyad" => {
             let mut d = DyadState::new(); d.human_phase = 125_000; d.step_dyad(TernarySpin::Resonance, 0);
