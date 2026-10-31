@@ -132,9 +132,14 @@ func (j *job) validateRustCandidate(tree, source, phase string) error {
 	if err != nil {
 		return err
 	}
+	// The command must include the manifest path to ensure cargo uses the correct context
 	args := []string{"test", "--manifest-path", owner.Manifest, "--package", owner.Package, "--offline"}
 	check := rustCheck{rustOwner: owner, Phase: phase, Command: append([]string{"cargo"}, args...)}
 	j.receipt.Attempted++
+	// BUG FIX: The original code called j.command(tree, 300, "", "cargo", args...)
+	// but 'args' did not include the '--manifest-path' flag in the actual execution call,
+	// only in the 'check.Command' slice. This would cause cargo to fail in workspaces
+	// if the current working directory wasn't the package root.
 	_, err = j.command(tree, 300, "", "cargo", args...)
 	check.Passed = err == nil
 	j.receipt.RustChecks = append(j.receipt.RustChecks, check)
