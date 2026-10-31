@@ -75,7 +75,9 @@ func pruneJobDirs(root, prefix string, keep int) {
 	}
 	sort.Slice(matched, func(i, j int) bool { return matched[i].mod > matched[j].mod })
 	for _, item := range matched[keep:] {
-		_ = os.RemoveAll(item.path)
+		if err := os.RemoveAll(item.path); err != nil {
+			// Log or handle error if necessary, but do not stop pruning
+		}
 	}
 }
 
