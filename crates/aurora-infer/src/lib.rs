@@ -113,6 +113,47 @@ impl BitNetB158 {
         Err(InferenceError::InvalidShape)
     }
 }
+
+pub const DEFAULT_VISION_MODEL: &str = "qwen3.8:27b";
+pub const DEFAULT_VISION_ENDPOINT: &str = "http://127.0.0.1:11434/api/chat";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisionFrameEnvelope {
+    pub model: String,
+    pub mime_type: String,
+    pub byte_len: usize,
+    pub packed_patch_trits: Vec<u8>,
+    pub trit_count: usize,
+}
+
+/// Deterministically quantize raw image bytes into balanced-ternary `{-1, 0, +1}`
+/// luminance-delta trits around `mid` (`128`) with deadband `epsilon`, then pack 5 trits/byte.
+pub fn quantize_image_patch_trits(
+    raw_bytes: &[u8],
+    mime_type: &str,
+    epsilon: u64,
+    max_samples: usize,
+) -> Result<VisionFrameEnvelope, InferenceError> {
+    if raw_bytes.is_empty() || max_samples == 0 {
+        return Err(InferenceError::InvalidShape);
+    }
+    let step = (raw_bytes.len() / max_samples).max(1);
+    let trits: Vec<i8> = raw_bytes
+        .iter()
+        .step_by(step)
+        .take(max_samples)
+        .map(|&b| quantize_ternary(i64::from(b) - 128, epsilon))
+        .collect();
+    let packed = pack_trits(&trits)?;
+    Ok(VisionFrameEnvelope {
+        model: DEFAULT_VISION_MODEL.to_string(),
+        mime_type: mime_type.to_string(),
+        byte_len: raw_bytes.len(),
+        packed_patch_trits: packed,
+        trit_count: trits.len(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,5 +181,15 @@ mod tests {
             assert_eq!(unpack_trits(&pack_trits(&t).unwrap(), count).unwrap(), t);
         }
         assert!(unpack_trits(&[255], 5).is_err());
+    }
+    #[test]
+    fn vision_frame_envelope_quantizes_and_packs_deterministically() {
+        let sample = [0u8, 64, 128, 192, 255, 10, 128, 240, 128, 250];
+        let env = quantize_image_patch_trits(&sample, "image/jpeg", 16, 10).unwrap();
+        assert_eq!(env.model, "qwen3.8:27b");
+        assert_eq!(env.trit_count, 10);
+        assert_eq!(env.packed_patch_trits.len(), 2);
+        let unpacked = unpack_trits(&env.packed_patch_trits, env.trit_count).unwrap();
+        assert_eq!(unpacked, vec![-1, -1, 0, 1, 1, -1, 0, 1, 0, 1]);
     }
 }
