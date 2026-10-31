@@ -106,6 +106,7 @@ func parseTrits(text string) ([]Trit, error) {
 		case '0':
 			out = append(out, 0)
 		case ' ', ',':
+			continue
 		default:
 			return nil, fmt.Errorf("invalid trit %q", c)
 		}
