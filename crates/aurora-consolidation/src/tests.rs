@@ -39,7 +39,9 @@ fn temp_path(tag: &str) -> PathBuf {
         .expect("clock")
         .as_nanos();
     // Use u128 for nanos to ensure exact integer representation in the filename
-    std::env::temp_dir().join(format!("aurora-dream-{tag}-{}", nanos).replace("-", "_"))
+    // Replace hyphens with underscores to avoid path parsing ambiguity
+    let suffix = nanos.to_string().replace('-', "_");
+    std::env::temp_dir().join(format!("aurora-dream-{tag}-{suffix}"))
 }
 
 /// A worker that is idle immediately, so tests exercise the pass itself.
