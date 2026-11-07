@@ -162,6 +162,10 @@ impl<'a> AurSnapIndex<'a> {
         if version != VERSION {
             return invalid("unsupported version");
         }
+        let version = read_u32(buf, OFF_VERSION)?;
+        if version != VERSION {
+            return invalid("unsupported version");
+        }
         if read_u32(buf, OFF_FLAGS)? != 0 || buf[48..64].iter().any(|byte| *byte != 0) {
             return invalid("unsupported flags or reserved bytes");
         }
