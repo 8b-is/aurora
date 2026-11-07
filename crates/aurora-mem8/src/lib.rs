@@ -144,7 +144,12 @@ impl WaveGrid {
             let old = read_snapshot(path, WAVE_MAGIC)?;
             // The generation check must compare against the CRC of the data portion
             // excluding the 4-byte CRC suffix itself.
-            if self.generation != Some(crc32(&old[..old.len() - 4])) {
+            // We must also account for the 8-byte magic and 8-byte epoch header
+            // that are part of the snapshot but not part of the current grid's state.
+            // However, the generation is stored as the CRC of the entire payload
+            // written by atomic_write. We check if the current generation matches
+            // the CRC of the file on disk to ensure no concurrent writes occurred.
+            if self.generation.is_some() && self.generation != Some(crc32(&old[..old.len() - 4])) {
                 return Err(KintsugiError::Busy);
             }
         } else if self.generation.is_some() {
