@@ -43,7 +43,12 @@ pub fn marine_salience(outlier: u32, temporal_change: u32) -> u32 {
     (7 * outlier.min(SCALE) + 3 * temporal_change.min(SCALE)) / 10
 }
 pub fn co_regulate(stability: u32) -> VocalAdjustment {
-    let damping = SCALE - 12 * (SCALE - stability.min(SCALE)) / 100;
+    // damping = SCALE - 0.12 * (SCALE - stability)
+    // To avoid float, use: SCALE - (12 * (SCALE - stability)) / 100
+    // We use u64 for the intermediate product to prevent overflow if SCALE is large,
+    // though with SCALE=1,000,000, u32 would suffice (12 * 1,000,000 = 12,000,000).
+    let diff = (SCALE - stability.min(SCALE)) as u64;
+    let damping = (SCALE as u64 - (12 * diff) / 100) as u32;
     VocalAdjustment {
         pitch_ppm: damping,
         cadence_ppm: damping,
