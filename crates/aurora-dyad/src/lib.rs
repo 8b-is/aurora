@@ -58,20 +58,11 @@ impl DyadState {
         let h = self.human_phase.rem_euclid(i64::from(SCALE));
         let a = self.aurora_phase.rem_euclid(i64::from(SCALE));
         let diff = h - a;
-        // Normalize diff to [-SCALE, SCALE] for cos_turns_ppm
-        // If diff is positive and > SCALE, it wraps around the circle
-        // If diff is negative and < -SCALE, it wraps around the circle
-        // Since h, a are in [0, SCALE), diff is in (-SCALE, SCALE)
-        // The existing logic was slightly redundant but the core issue is ensuring
-        // the range is strictly within [-SCALE, SCALE] for the cos function.
-        let normalized_diff = if diff > i64::from(SCALE) {
-            diff - 2 * i64::from(SCALE)
-        } else if diff < -i64::from(SCALE) {
-            diff + 2 * i64::from(SCALE)
-        } else {
-            diff
-        };
-        cos_turns_ppm(normalized_diff)
+        // Since h, a are in [0, SCALE), diff is in (-SCALE, SCALE).
+        // cos_turns_ppm expects a value in [-SCALE, SCALE].
+        // The previous normalization logic was redundant for the current range,
+        // but we ensure the diff is passed directly as it is already bounded.
+        cos_turns_ppm(diff)
     }
     /// Margaret Hamilton Apollo AGC Priority-Executive Recovery (`1201` / `1202` alarm shed):
     /// sheds non-essential entropy load and preserves phase-locked guidance with Kintsugi grace.
