@@ -38,9 +38,10 @@ pub fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>, InferenceErro
     }
     let mut out = Vec::with_capacity(count);
     for byte in bytes {
-        let mut n = *byte;
+        let mut n = *byte as i16;
         for _ in 0..5.min(count - out.len()) {
-            out.push((n % 3) as i8 - 1);
+            let trit_val = (n % 3) as i8;
+            out.push(trit_val - 1);
             n /= 3;
         }
         if n != 0 {
