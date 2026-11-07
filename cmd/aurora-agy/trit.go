@@ -43,12 +43,9 @@ func (t Trit) color() (uint8, uint8, uint8) {
 // quantizeTrit collapses a real weight into a balanced ternary trit with a
 // symmetric epsilon dead-zone.
 func quantizeTrit(w int64, epsilon uint64) Trit {
-	// Handle math.MinInt64 case by checking if w is less than -epsilon
-	// or if the absolute value exceeds epsilon.
 	if w < 0 {
-		// To avoid overflow when negating math.MinInt64, we check against -epsilon
-		// but since epsilon is uint64, we use the magnitude logic.
-		// If w is -9223372036854775808, magnitude is 9223372036854775808.
+		// Check if |w| <= epsilon without overflowing negation of MinInt64.
+		// If w is MinInt64, its magnitude is 1 << 63.
 		var magnitude uint64
 		if w == -9223372036854775808 {
 			magnitude = 1 << 63
@@ -61,6 +58,7 @@ func quantizeTrit(w int64, epsilon uint64) Trit {
 		return TritNeg
 	}
 
+	// For w >= 0, we can safely cast to uint64.
 	if uint64(w) <= epsilon {
 		return TritZero
 	}
