@@ -101,9 +101,9 @@ func (l TernaryLayer) forward(in []Trit) ([]int32, error) {
 				return nil, fmt.Errorf("invalid trit")
 			}
 			sum += int64(w) * int64(in[j])
-			if sum < -(1<<31) || sum > (1<<31)-1 {
-				return nil, fmt.Errorf("activation overflow")
-			}
+		}
+		if sum < -2147483648 || sum > 2147483647 {
+			return nil, fmt.Errorf("activation overflow")
 		}
 		out[i] = int32(sum)
 	}
