@@ -30,6 +30,7 @@ impl PhoenixState {
         // (7 * old + input) / 8
         let old = self.smooth_jitter as u64;
         let input = raw_jitter.min(SCALE) as u64;
+        // Use integer division; truncation is acceptable per EWMA requirements.
         self.smooth_jitter = ((7 * old + input) / 8) as u32;
     }
     pub fn stability(&self) -> u32 {
