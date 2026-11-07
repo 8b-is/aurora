@@ -20,6 +20,7 @@ pub fn fine_touch_fade(t: u32) -> u32 {
     // To scale to [0, SCALE], we use (3t^2s - 2t^3) / s^2
     // which is equivalent to (t^2 * (3s - 2t)) / s^2
     // We use u128 to prevent overflow during intermediate products.
+    // Note: (3s - 2t) is always >= 0 because t <= s.
     ((t * t * (3 * s - 2 * t)) / (s * s)) as u32
 }
 pub fn apply_fade(sample: i16, t: u32) -> i16 {
