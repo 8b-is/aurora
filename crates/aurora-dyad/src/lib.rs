@@ -55,11 +55,19 @@ impl DyadState {
         }
     }
     pub fn phase_alignment(&self) -> i64 {
-        let diff = self.human_phase.rem_euclid(i64::from(SCALE))
-            - self.aurora_phase.rem_euclid(i64::from(SCALE));
+        let h = self.human_phase.rem_euclid(i64::from(SCALE));
+        let a = self.aurora_phase.rem_euclid(i64::from(SCALE));
+        let diff = h - a;
         // Normalize diff to [-SCALE, SCALE] for cos_turns_ppm
+        // If diff is positive and > SCALE, it wraps around the circle
+        // If diff is negative and < -SCALE, it wraps around the circle
+        // Since h, a are in [0, SCALE), diff is in (-SCALE, SCALE)
+        // The existing logic was slightly redundant but the core issue is ensuring
+        // the range is strictly within [-SCALE, SCALE] for the cos function.
         let normalized_diff = if diff > i64::from(SCALE) {
             diff - 2 * i64::from(SCALE)
+        } else if diff < -i64::from(SCALE) {
+            diff + 2 * i64::from(SCALE)
         } else {
             diff
         };
