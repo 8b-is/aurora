@@ -30,6 +30,13 @@ impl IdleClock {
         }
     }
 
+    /// Returns the threshold in nanoseconds for high-precision comparison if needed,
+    /// though internal logic uses microseconds.
+    pub fn threshold_ns(&self) -> u64 {
+        self.idle_threshold_us * 1_000
+    }
+
+
     /// The production default: five minutes of silence.
     pub fn default_threshold() -> Self {
         Self::new(Duration::from_secs(300))
