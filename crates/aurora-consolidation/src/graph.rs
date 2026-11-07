@@ -114,6 +114,7 @@ impl StateGraph {
                 }
             }
         }
+        // The number of merged nodes is the number of nodes that were mapped to an existing canonical ID.
         let merged = remap.iter().filter(|(old, new)| old != new).count();
 
         // 2. Rewrite edges through the remap, dropping self-loops.
